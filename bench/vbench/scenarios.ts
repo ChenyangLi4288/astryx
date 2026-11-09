@@ -1,0 +1,495 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+/**
+ * @file scenarios.ts
+ * @input A page on the vbench engines page (or any page with the same
+ *   `window.__vbench` controls), a CDP session, and recording helpers
+ * @output The protocol's scripted scenarios S1–S9 (S8 = S1, S3, S5 on page
+ *   scroll), each returning its recorded frames, the ground-truth stages it
+ *   needs, and scenario-specific results (S9 pass/fail, heap)
+ * @position Scenario scripts of the virtualizer bake-off protocol (artifact
+ *   1842415570228789). Bench-only; never merged.
+ */
+
+import type {CDPSession, Page} from '@playwright/test';
+import {
+  gesture,
+  heapMb,
+  nextStage,
+  setInput,
+  startRecording,
+  stopRecording,
+  type RecordedFrame,
+} from './collect';
+
+/** A mutation the ground truth must replay, in order. */
+export type Mutation =
+  | {kind: 'append'; count: number}
+  | {kind: 'insertAbove'; count: number}
+  | {kind: 'resize'; key: string; delta: number};
+
+export interface ScenarioResult {
+  frames: RecordedFrame[];
+  /** Mutations in order; `stage` marks the layout-changing ones. */
+  mutations: Mutation[];
+  /** Scenario-specific results. */
+  extra: Record<string, unknown>;
+}
+
+export interface ScenarioDef {
+  id: string;
+  rows: number;
+  anchor: 'first-visible' | 'end' | 'item';
+  scroller: 'container' | 'page';
+  run: (page: Page, cdp: CDPSession) => Promise<ScenarioResult>;
+}
+
+type Api = {
+  count(): number;
+  keyAt(i: number): string | null;
+  append(n: number): void;
+  insertAbove(n: number): void;
+  resize(key: string, delta: number): void;
+  setAnchor(mode: string, key?: string | null): void;
+  firstVisibleKey(): string | null;
+  scrollToKey(key: string): void;
+  focusKey(key: string): void;
+  focusedKey(): string | null;
+  focusedPosition(): number | null;
+  expectedPosition(key: string): number;
+};
+
+async function api<T>(page: Page, fn: (api: Api) => T): Promise<T> {
+  return page.evaluate(source => {
+    const f = new Function('api', `return (${source})(api);`);
+    return f((window as unknown as {__vbench: unknown}).__vbench);
+  }, fn.toString()) as Promise<T>;
+}
+
+async function scrollToFraction(page: Page, fraction: number): Promise<void> {
+  await page.evaluate(f => {
+    const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
+    if (el) {
+      el.scrollTop = (el.scrollHeight - el.clientHeight) * f;
+    } else {
+      window.scrollTo(
+        0,
+        (document.documentElement.scrollHeight - window.innerHeight) * f,
+      );
+    }
+  }, fraction);
+}
+
+async function scrollToEnd(page: Page): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    await scrollToFraction(page, 1);
+    await page.waitForTimeout(100);
+  }
+}
+
+async function settle(page: Page, ms: number): Promise<void> {
+  await page.waitForTimeout(ms);
+}
+
+/** Streams `perSecond` appends for `seconds`. */
+async function stream(
+  page: Page,
+  mutations: Mutation[],
+  perSecond: number,
+  seconds: number,
+): Promise<void> {
+  const interval = 1000 / perSecond;
+  const total = Math.round(perSecond * seconds);
+  await page.evaluate(
+    ({interval, total}) =>
+      new Promise<void>(resolve => {
+        let sent = 0;
+        const api = (window as unknown as {__vbench: Api}).__vbench;
+        const timer = setInterval(() => {
+          api.append(1);
+          sent += 1;
+          if (sent >= total) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, interval);
+      }),
+    {interval, total},
+  );
+  for (let i = 0; i < total; i++) {
+    mutations.push({kind: 'append', count: 1});
+  }
+}
+
+/** S1: flings top to bottom, capped at 30 s. */
+async function flingDown(
+  page: Page,
+  cdp: CDPSession,
+  capMs: number,
+): Promise<number> {
+  const start = Date.now();
+  let flings = 0;
+  await setInput(page, true);
+  while (Date.now() - start < capMs) {
+    await gesture(page, cdp, {distance: 6000, speed: 12000, momentum: true});
+    flings += 1;
+    const atEnd = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
+      return el
+        ? el.scrollTop + el.clientHeight >= el.scrollHeight - 2
+        : window.scrollY + window.innerHeight >=
+            document.documentElement.scrollHeight - 2;
+    });
+    if (atEnd) {
+      break;
+    }
+  }
+  await setInput(page, false);
+  return flings;
+}
+
+function def(
+  id: string,
+  rows: number,
+  anchor: ScenarioDef['anchor'],
+  scroller: ScenarioDef['scroller'],
+  run: ScenarioDef['run'],
+): ScenarioDef {
+  return {id, rows, anchor, scroller, run};
+}
+
+const s1 = (scroller: ScenarioDef['scroller'], id: string) =>
+  def(id, 10_000, 'first-visible', scroller, async (page, cdp) => {
+    await startRecording(page, {rects: true});
+    const flings = await flingDown(page, cdp, 30_000);
+    await settle(page, 500);
+    const scrolled = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
+      return el ? el.scrollTop : window.scrollY;
+    });
+    return {
+      frames: await stopRecording(page),
+      mutations: [],
+      extra: {flings, scrolledPx: Math.round(scrolled)},
+    };
+  });
+
+const s2 = def(
+  'S2',
+  100_000,
+  'first-visible',
+  'container',
+  async (page, cdp) => {
+    await startRecording(page, {rects: true});
+    for (const f of [0.25, 0.5, 0.75, 0.5, 0.25, 0]) {
+      await setInput(page, true);
+      await scrollToFraction(page, f);
+      await page.waitForTimeout(32);
+      const key = await api(page, a => a.firstVisibleKey());
+      await api(page, a => a.setAnchor('first-visible', null));
+      await page.evaluate(
+        k =>
+          (window as unknown as {__vbench: Api}).__vbench.setAnchor(
+            'first-visible',
+            k,
+          ),
+        key,
+      );
+      await setInput(page, false);
+      await settle(page, 1000);
+    }
+    const frames = await stopRecording(page);
+    return {frames, mutations: [], extra: {heapMb: await heapMb(cdp)}};
+  },
+);
+
+const s3 = (scroller: ScenarioDef['scroller'], id: string) =>
+  def(id, 10_000, 'end', scroller, async page => {
+    const mutations: Mutation[] = [];
+    await page.evaluate(() =>
+      (window as unknown as {__vbench: Api}).__vbench.setAnchor('end', null),
+    );
+    await scrollToEnd(page);
+    await startRecording(page, {rects: true});
+    const t0 = Date.now();
+    await stream(page, mutations, 20, 60);
+    const appendMs = Date.now() - t0;
+    await settle(page, 500);
+    return {
+      frames: await stopRecording(page),
+      mutations,
+      extra: {appendWallMs: appendMs},
+    };
+  });
+
+const s4 = def('S4', 10_000, 'first-visible', 'container', async page => {
+  const mutations: Mutation[] = [];
+  await scrollToFraction(page, 0.5);
+  await settle(page, 300);
+  const key = await api(page, a => a.firstVisibleKey());
+  await page.evaluate(
+    k =>
+      (window as unknown as {__vbench: Api}).__vbench.setAnchor(
+        'first-visible',
+        k,
+      ),
+    key,
+  );
+  await startRecording(page, {rects: true});
+  await stream(page, mutations, 20, 20);
+  await settle(page, 500);
+  return {
+    frames: await stopRecording(page),
+    mutations,
+    extra: {anchorKey: key},
+  };
+});
+
+const s5 = (scroller: ScenarioDef['scroller'], id: string) =>
+  def(id, 10_000, 'first-visible', scroller, async page => {
+    const mutations: Mutation[] = [];
+    await scrollToFraction(page, 0.5);
+    await settle(page, 300);
+    const key = await api(page, a => a.firstVisibleKey());
+    await page.evaluate(
+      k =>
+        (window as unknown as {__vbench: Api}).__vbench.setAnchor(
+          'first-visible',
+          k,
+        ),
+      key,
+    );
+    await startRecording(page, {rects: true});
+    await settle(page, 200);
+    await page.evaluate(() =>
+      (window as unknown as {__vbench: Api}).__vbench.insertAbove(50),
+    );
+    await nextStage(page);
+    mutations.push({kind: 'insertAbove', count: 50});
+    await settle(page, 2000);
+    return {
+      frames: await stopRecording(page),
+      mutations,
+      extra: {anchorKey: key},
+    };
+  });
+
+const s6 = (mode: 'first-visible' | 'item', id: string) =>
+  def(id, 10_000, mode, 'container', async page => {
+    const mutations: Mutation[] = [];
+    await scrollToFraction(page, 0.5);
+    await settle(page, 300);
+    // The resized row sits mid-viewport; with item anchoring, the anchor is
+    // the row after it, which must stay still while the row above it grows.
+    const picked = await page.evaluate(mode => {
+      const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
+      const top = el?.getBoundingClientRect().top ?? 0;
+      const height = el?.clientHeight ?? window.innerHeight;
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>('[data-vbench-key]'),
+      ]
+        .filter(r => r.style.display !== 'none')
+        .map(r => ({
+          key: r.dataset.vbenchKey ?? '',
+          top: r.getBoundingClientRect().top - top,
+        }))
+        .filter(r => r.top >= 0 && r.top < height)
+        .sort((a, b) => a.top - b.top);
+      const first = rows[0]?.key ?? null;
+      const mid = rows[Math.floor(rows.length / 2)]?.key ?? null;
+      const after = rows[Math.floor(rows.length / 2) + 1]?.key ?? null;
+      return {first, mid, after, anchor: mode === 'item' ? after : first};
+    }, mode);
+    await page.evaluate(
+      ({mode, key}) =>
+        (window as unknown as {__vbench: Api}).__vbench.setAnchor(mode, key),
+      {mode, key: picked.anchor},
+    );
+    await startRecording(page, {rects: true});
+    await settle(page, 200);
+    for (const delta of [300, -300]) {
+      await page.evaluate(
+        ({key, delta}) =>
+          (window as unknown as {__vbench: Api}).__vbench.resize(key, delta),
+        {key: picked.mid ?? '', delta},
+      );
+      await nextStage(page);
+      mutations.push({kind: 'resize', key: picked.mid ?? '', delta});
+      await settle(page, 1000);
+    }
+    return {frames: await stopRecording(page), mutations, extra: picked};
+  });
+
+const s7 = def('S7', 10_000, 'item', 'container', async page => {
+  const mutations: Mutation[] = [];
+  const key = await page.evaluate(() => {
+    const api = (window as unknown as {__vbench: Api}).__vbench;
+    return api.keyAt(Math.floor(api.count() * 0.6));
+  });
+  await page.evaluate(
+    k => (window as unknown as {__vbench: Api}).__vbench.scrollToKey(k ?? ''),
+    key,
+  );
+  await settle(page, 1500);
+  await page.evaluate(
+    k => (window as unknown as {__vbench: Api}).__vbench.setAnchor('item', k),
+    key,
+  );
+  await startRecording(page, {rects: true});
+  await stream(page, mutations, 20, 10);
+  await settle(page, 500);
+  return {
+    frames: await stopRecording(page),
+    mutations,
+    extra: {anchorKey: key},
+  };
+});
+
+const s9 = def('S9', 10_000, 'first-visible', 'container', async page => {
+  await scrollToFraction(page, 0.3);
+  await settle(page, 300);
+  const key = await api(page, a => a.firstVisibleKey());
+  await page.evaluate(
+    k => (window as unknown as {__vbench: Api}).__vbench.focusKey(k ?? ''),
+    key,
+  );
+  await startRecording(page, {rects: true});
+  // Read the focused row's identity on every frame while it scrolls away.
+  const identity = await page.evaluate(
+    k =>
+      new Promise<{
+        lostFocus: boolean;
+        wrongRow: boolean;
+        wrongPosition: boolean;
+      }>(resolve => {
+        const api = (window as unknown as {__vbench: Api}).__vbench;
+        const expected = api.expectedPosition(k ?? '');
+        const result = {
+          lostFocus: false,
+          wrongRow: false,
+          wrongPosition: false,
+        };
+        let frames = 0;
+        const check = () => {
+          const focused = api.focusedKey();
+          if (document.activeElement === document.body || focused == null) {
+            result.lostFocus = true;
+          } else if (focused !== k) {
+            result.wrongRow = true;
+          } else if (api.focusedPosition() !== expected) {
+            result.wrongPosition = true;
+          }
+          if (++frames < 120) {
+            requestAnimationFrame(check);
+          } else {
+            resolve(result);
+          }
+        };
+        const el = document.querySelector<HTMLElement>(
+          '[data-vbench-scroller]',
+        );
+        if (el) {
+          el.scrollTop += el.clientHeight * 40;
+        } else {
+          window.scrollBy(0, window.innerHeight * 40);
+        }
+        requestAnimationFrame(check);
+      }),
+    key,
+  );
+  await page.evaluate(
+    k => (window as unknown as {__vbench: Api}).__vbench.scrollToKey(k ?? ''),
+    key,
+  );
+  await settle(page, 1500);
+  const back = await page.evaluate(k => {
+    const api = (window as unknown as {__vbench: Api}).__vbench;
+    return {
+      focused: api.focusedKey(),
+      position: api.focusedPosition(),
+      expected: api.expectedPosition(k ?? ''),
+      onBody: document.activeElement === document.body,
+    };
+  }, key);
+  const pass =
+    !identity.lostFocus &&
+    !identity.wrongRow &&
+    !identity.wrongPosition &&
+    !back.onBody &&
+    back.focused === key &&
+    back.position === back.expected;
+  return {
+    frames: await stopRecording(page),
+    mutations: [],
+    extra: {pass, identity, back, key},
+  };
+});
+
+export const SCENARIOS: ScenarioDef[] = [
+  s1('container', 'S1'),
+  s2,
+  s3('container', 'S3'),
+  s4,
+  s5('container', 'S5'),
+  s6('first-visible', 'S6'),
+  s6('item', 'S6-item'),
+  s7,
+  s9,
+  s1('page', 'S8-S1-page'),
+  s3('page', 'S8-S3-page'),
+  s5('page', 'S8-S5-page'),
+];
+
+/** Replays mutations on the ground-truth page; returns truths per stage. */
+export async function replayStages(
+  page: Page,
+  mutations: Mutation[],
+  read: () => Promise<Map<string, {top: number; bottom: number}>>,
+): Promise<Array<Map<string, {top: number; bottom: number}>>> {
+  const truths = [await read()];
+  let pendingAppends = 0;
+  const flushAppends = async () => {
+    if (pendingAppends === 0) {
+      return;
+    }
+    await page.evaluate(
+      n => (window as unknown as {__vbench: Api}).__vbench.append(n),
+      pendingAppends,
+    );
+    pendingAppends = 0;
+  };
+  for (const mutation of mutations) {
+    if (mutation.kind === 'append') {
+      pendingAppends += mutation.count;
+      continue;
+    }
+    await flushAppends();
+    if (mutation.kind === 'insertAbove') {
+      await page.evaluate(
+        n => (window as unknown as {__vbench: Api}).__vbench.insertAbove(n),
+        mutation.count,
+      );
+    } else {
+      await page.evaluate(
+        ({key, delta}) =>
+          (window as unknown as {__vbench: Api}).__vbench.resize(key, delta),
+        mutation,
+      );
+    }
+    await page.waitForTimeout(100);
+    truths.push(await read());
+  }
+  await flushAppends();
+  await page.waitForTimeout(100);
+  // Appends never move earlier rows, so the final read extends the last stage.
+  const final = await read();
+  const last = truths[truths.length - 1];
+  if (last) {
+    for (const [key, rect] of final) {
+      if (!last.has(key)) {
+        last.set(key, rect);
+      }
+    }
+  }
+  return truths;
+}

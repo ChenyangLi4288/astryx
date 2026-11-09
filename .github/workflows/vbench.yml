@@ -1,0 +1,144 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+
+# Virtualizer bake-off and engine-swap checks (bench/vbench/README.md).
+# Runs only on pushes to the scratch branch bench/virtualizer-bakeoff, which
+# is never merged. No secrets; read-only token.
+
+name: vbench
+
+on:
+  push:
+    branches: ['bench/virtualizer-bakeoff']
+
+permissions: {}
+
+concurrency:
+  group: vbench
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      scenarios: ${{ steps.plan.outputs.scenarios }}
+      runs: ${{ steps.plan.outputs.runs }}
+      text: ${{ steps.plan.outputs.text }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: bench/vbench/run.json
+          sparse-checkout-cone-mode: false
+      - id: plan
+        run: |
+          node -e '
+            const run = require("./bench/vbench/run.json");
+            const include = [];
+            for (const engine of run.engines) for (const throttle of run.throttles) include.push({engine, throttle});
+            const fs = require("fs");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,
+              `matrix=${JSON.stringify({include})}\nscenarios=${run.scenarios}\nruns=${run.runs}\ntext=${run.text}\n`);
+          '
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup
+      - name: Build the packages
+        run: pnpm build
+      - name: Build the Sandbox
+        run: pnpm -F @astryxdesign/sandbox build
+      - name: Engine bundle sizes
+        run: node bench/vbench/bundle-size.mjs vbench-bundles.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vbench-sandbox
+          path: apps/sandbox/out
+          retention-days: 3
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vbench-bundles
+          path: vbench-bundles.json
+          retention-days: 30
+
+  measure:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup
+      - name: Install Chromium
+        run: npx playwright install chromium
+      - uses: actions/download-artifact@v8
+        with:
+          name: vbench-sandbox
+          path: apps/sandbox/out
+      - name: Measure
+        env:
+          VBENCH_ENGINES: ${{ matrix.engine }}
+          VBENCH_THROTTLE: ${{ matrix.throttle }}
+          VBENCH_SCENARIOS: ${{ needs.plan.outputs.scenarios }}
+          VBENCH_RUNS: ${{ needs.plan.outputs.runs }}
+          VBENCH_TEXT: ${{ needs.plan.outputs.text }}
+          VBENCH_RESULTS_DIR: vbench-results/${{ matrix.engine }}-t${{ matrix.throttle }}
+        run: pnpm exec playwright test --config bench/vbench/playwright.vbench.config.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vbench-results-${{ matrix.engine }}-t${{ matrix.throttle }}
+          path: vbench-results
+          retention-days: 30
+          if-no-files-found: warn
+
+  report:
+    needs: [measure]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: bench/vbench
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: vbench-results-*
+          path: vbench-results
+      - uses: actions/download-artifact@v8
+        with:
+          name: vbench-bundles
+          path: .
+      - name: Aggregate
+        run: |
+          node bench/vbench/report.mjs vbench-results vbench-bundles.json vbench-report
+          cat vbench-report/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vbench-report
+          path: vbench-report
+          retention-days: 30

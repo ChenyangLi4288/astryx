@@ -49,6 +49,7 @@
     "commander": "^12.1.0",
     "typescript": "^6.0.3",
     "vite": "catalog:",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "@tanstack/virtual-core": "3.19.10"
   }
 }
