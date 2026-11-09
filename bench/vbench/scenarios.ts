@@ -159,11 +159,16 @@ async function flingDown(
   void cdp;
   const viewport = page.viewportSize() ?? {width: 800, height: 600};
   await page.mouse.move(viewport.width / 2, viewport.height / 2);
-  while (Date.now() - start < capMs) {
+  const deadline = start + capMs;
+  outer: while (Date.now() < deadline) {
     // A fling as wheel events at 60 Hz whose deltas decay, as a trackpad
-    // fling's momentum does: about 80,000 px over 2 s per fling. Chromium's
-    // synthetic touch gesture does not scroll these pages headless.
-    for (let delta = 2500; delta >= 10; delta *= 0.97) {
+    // fling's momentum does: a peak of 300 px per frame (18,000 px/s) and
+    // about 10,000 px per fling. Chromium's synthetic touch gesture does not
+    // scroll these pages headless.
+    for (let delta = 300; delta >= 5; delta *= 0.97) {
+      if (Date.now() >= deadline) {
+        break outer;
+      }
       await page.mouse.wheel(0, Math.round(delta));
       await page.waitForTimeout(16);
     }
@@ -201,7 +206,7 @@ const s1 = (scroller: ScenarioDef['scroller'], id: string) =>
       await page.waitForTimeout(100);
     }
     await startRecording(page, {rects: true});
-    const flings = await flingDown(page, cdp, 60_000);
+    const flings = await flingDown(page, cdp, 30_000);
     await settle(page, 500);
     const scrolled = await page.evaluate(() => {
       const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');

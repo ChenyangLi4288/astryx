@@ -1,5 +1,5 @@
 {
-  "mode": "both",
+  "mode": "compare",
   "engines": [
     "listwindow",
     "chat",
@@ -12,22 +12,54 @@
     "chat@direct"
   ],
   "throttles": [
-    1
+    1,
+    4,
+    6
   ],
   "groups": [
     [
       "S1",
+      "S1-text200",
+      "S2"
+    ],
+    [
+      "S3"
+    ],
+    [
+      "S8-S3-page"
+    ],
+    [
+      "S4",
       "S5",
+      "S6",
+      "S6-item"
+    ],
+    [
+      "S7",
+      "S9",
       "S12",
       "A4",
-      "S11"
+      "S11",
+      "S11-page"
     ],
     [
       "S8-S1-page",
+      "S1-text200-page",
+      "S2-page"
+    ],
+    [
+      "S4-page",
+      "S8-S5-page",
+      "S6-page",
+      "S6-item-page"
+    ],
+    [
+      "S7-page",
       "S9-page",
-      "S11-page"
+      "S12-page",
+      "A4-page"
     ]
   ],
-  "runs": 1,
+  "runs": 5,
   "text": 100
 }
