@@ -25,7 +25,8 @@ import {
 export type Mutation =
   | {kind: 'append'; count: number}
   | {kind: 'insertAbove'; count: number}
-  | {kind: 'resize'; key: string; delta: number};
+  | {kind: 'resize'; key: string; delta: number}
+  | {kind: 'width'; px: number | null};
 
 export interface ScenarioResult {
   frames: RecordedFrame[];
@@ -42,6 +43,10 @@ export interface ScenarioDef {
   scroller: 'container' | 'page';
   /** Text scale for this scenario, percent; the run's scale when absent. */
   text?: number;
+  /** Extra page parameters, e.g. wrapping rows. */
+  params?: Record<string, string>;
+  /** S11: measure the first painted frames instead of running a script. */
+  firstPaint?: boolean;
   run: (page: Page, cdp: CDPSession) => Promise<ScenarioResult>;
 }
 
@@ -52,6 +57,7 @@ type Api = {
   insertAbove(n: number): void;
   resize(key: string, delta: number): void;
   setAnchor(mode: string, key?: string | null): void;
+  setWidth(px: number | null): void;
   firstVisibleKey(): string | null;
   scrollToKey(key: string): void;
   focusKey(key: string): void;
@@ -98,20 +104,24 @@ async function stream(
   mutations: Mutation[],
   perSecond: number,
   seconds: number,
-): Promise<void> {
+): Promise<{appendMsP50: number | null; appendMsP95: number | null}> {
   const interval = 1000 / perSecond;
   const total = Math.round(perSecond * seconds);
-  await page.evaluate(
+  // P4: each append's cost, from the append to the next frame.
+  const costs = await page.evaluate(
     ({interval, total}) =>
-      new Promise<void>(resolve => {
+      new Promise<number[]>(resolve => {
         let sent = 0;
+        const out: number[] = [];
         const api = (window as unknown as {__vbench: Api}).__vbench;
         const timer = setInterval(() => {
+          const t0 = performance.now();
           api.append(1);
+          requestAnimationFrame(() => out.push(performance.now() - t0));
           sent += 1;
           if (sent >= total) {
             clearInterval(timer);
-            resolve();
+            setTimeout(() => resolve(out), 100);
           }
         }, interval);
       }),
@@ -120,6 +130,21 @@ async function stream(
   for (let i = 0; i < total; i++) {
     mutations.push({kind: 'append', count: 1});
   }
+  const sorted = [...costs].sort((a, b) => a - b);
+  const at = (p: number) =>
+    sorted.length
+      ? (sorted[
+          Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)
+        ] ?? null)
+      : null;
+  const round = (n: number | null) =>
+    n == null ? null : Math.round(n * 100) / 100;
+  return {appendMsP50: round(at(50)), appendMsP95: round(at(95))};
+}
+
+/** P6: the page's element count. */
+async function domNodes(page: Page): Promise<number> {
+  return page.evaluate(() => document.getElementsByTagName('*').length);
 }
 
 /** S1: flings top to bottom, capped at 30 s. */
@@ -185,7 +210,11 @@ const s1 = (scroller: ScenarioDef['scroller'], id: string) =>
     return {
       frames: await stopRecording(page),
       mutations: [],
-      extra: {flings, scrolledPx: Math.round(scrolled)},
+      extra: {
+        flings,
+        scrolledPx: Math.round(scrolled),
+        domNodes: await domNodes(page),
+      },
     };
   });
 
@@ -214,7 +243,11 @@ const s2 = def(
       await settle(page, 1000);
     }
     const frames = await stopRecording(page);
-    return {frames, mutations: [], extra: {heapMb: await heapMb(cdp)}};
+    return {
+      frames,
+      mutations: [],
+      extra: {heapMb: await heapMb(cdp), domNodes: await domNodes(page)},
+    };
   },
 );
 
@@ -226,14 +259,12 @@ const s3 = (scroller: ScenarioDef['scroller'], id: string) =>
     );
     await scrollToEnd(page);
     await startRecording(page, {rects: true});
-    const t0 = Date.now();
-    await stream(page, mutations, 20, 60);
-    const appendMs = Date.now() - t0;
+    const cost = await stream(page, mutations, 20, 60);
     await settle(page, 500);
     return {
       frames: await stopRecording(page),
       mutations,
-      extra: {appendWallMs: appendMs},
+      extra: {...cost, domNodes: await domNodes(page)},
     };
   });
 
@@ -251,12 +282,12 @@ const s4 = def('S4', 10_000, 'first-visible', 'container', async page => {
     key,
   );
   await startRecording(page, {rects: true});
-  await stream(page, mutations, 20, 20);
+  const cost = await stream(page, mutations, 20, 20);
   await settle(page, 500);
   return {
     frames: await stopRecording(page),
     mutations,
-    extra: {anchorKey: key},
+    extra: {anchorKey: key, ...cost},
   };
 });
 
@@ -351,12 +382,12 @@ const s7 = def('S7', 10_000, 'item', 'container', async page => {
     key,
   );
   await startRecording(page, {rects: true});
-  await stream(page, mutations, 20, 10);
+  const cost = await stream(page, mutations, 20, 10);
   await settle(page, 500);
   return {
     frames: await stopRecording(page),
     mutations,
-    extra: {anchorKey: key},
+    extra: {anchorKey: key, ...cost},
   };
 });
 
@@ -531,8 +562,80 @@ export const COMPONENT_SCENARIOS: ScenarioDef[] = [
   appendCost,
 ];
 
-export const SCENARIOS: ScenarioDef[] = [
+/** S12: the scroller's width shrinks by 30 % mid-list, then grows back. */
+const s12 = def('S12', 10_000, 'first-visible', 'container', async page => {
+  const mutations: Mutation[] = [];
+  await scrollToFraction(page, 0.5);
+  await settle(page, 300);
+  const key = await api(page, a => a.firstVisibleKey());
+  await page.evaluate(
+    k =>
+      (window as unknown as {__vbench: Api}).__vbench.setAnchor(
+        'first-visible',
+        k,
+      ),
+    key,
+  );
+  await startRecording(page, {rects: true});
+  await settle(page, 200);
+  const full = page.viewportSize()?.width ?? 800;
+  for (const px of [Math.round(full * 0.7), null]) {
+    await page.evaluate(
+      w => (window as unknown as {__vbench: Api}).__vbench.setWidth(w),
+      px,
+    );
+    await nextStage(page);
+    mutations.push({kind: 'width', px});
+    await settle(page, 1200);
+  }
+  return {
+    frames: await stopRecording(page),
+    mutations,
+    extra: {anchorKey: key},
+  };
+});
+
+/** A4: jump to 75 %, then scroll up into rows not yet measured. */
+const a4 = def('A4', 10_000, 'first-visible', 'container', async page => {
+  await scrollToFraction(page, 0.75);
+  await settle(page, 300);
+  await startRecording(page, {rects: true});
+  const viewport = page.viewportSize() ?? {width: 800, height: 600};
+  await page.mouse.move(viewport.width / 2, viewport.height / 2);
+  for (let i = 0; i < 40; i++) {
+    await setInput(page, true);
+    await page.mouse.wheel(0, -300);
+    await page.waitForTimeout(16);
+    await setInput(page, false);
+    // The row at the top must hold still while the engine measures the rows
+    // it just showed; a move here is a jump.
+    const key = await api(page, a => a.firstVisibleKey());
+    await page.evaluate(
+      k =>
+        (window as unknown as {__vbench: Api}).__vbench.setAnchor(
+          'first-visible',
+          k,
+        ),
+      key,
+    );
+    await settle(page, 120);
+  }
+  return {frames: await stopRecording(page), mutations: [], extra: {}};
+});
+
+/** S11: the first painted frames; the driver records them from navigation. */
+const s11 = (scroller: ScenarioDef['scroller'], id: string): ScenarioDef => ({
+  id,
+  rows: 10_000,
+  anchor: 'first-visible',
+  scroller,
+  firstPaint: true,
+  run: async () => ({frames: [], mutations: [], extra: {}}),
+});
+
+const BASE: ScenarioDef[] = [
   s1('container', 'S1'),
+  {...s1('container', 'S1-text200'), text: 200},
   s2,
   s3('container', 'S3'),
   s4,
@@ -541,12 +644,29 @@ export const SCENARIOS: ScenarioDef[] = [
   s6('item', 'S6-item'),
   s7,
   s9,
-  // Text scaling must not turn windowing off or clip rows.
-  {...s1('container', 'S1-text200'), text: 200},
-  // Page scroll with a list that does not start at the document top.
-  s1('page', 'S8-S1-page'),
-  s3('page', 'S8-S3-page'),
-  s5('page', 'S8-S5-page'),
+  {...s12, params: {wrap: '1'}},
+  a4,
+];
+
+/** Page-scroll twin of a container scenario (A9; S8 for S1, S3 and S5). */
+function onPage(scenario: ScenarioDef): ScenarioDef {
+  const named: Record<string, string> = {
+    S1: 'S8-S1-page',
+    S3: 'S8-S3-page',
+    S5: 'S8-S5-page',
+  };
+  return {
+    ...scenario,
+    id: named[scenario.id] ?? `${scenario.id}-page`,
+    scroller: 'page',
+  };
+}
+
+export const SCENARIOS: ScenarioDef[] = [
+  ...BASE,
+  ...BASE.map(onPage),
+  s11('container', 'S11'),
+  s11('page', 'S11-page'),
 ];
 
 /** Replays mutations on the ground-truth page; returns truths per stage. */
@@ -577,6 +697,11 @@ export async function replayStages(
       await page.evaluate(
         n => (window as unknown as {__vbench: Api}).__vbench.insertAbove(n),
         mutation.count,
+      );
+    } else if (mutation.kind === 'width') {
+      await page.evaluate(
+        w => (window as unknown as {__vbench: Api}).__vbench.setWidth(w),
+        mutation.px,
       );
     } else {
       await page.evaluate(

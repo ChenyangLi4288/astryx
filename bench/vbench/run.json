@@ -5,7 +5,11 @@
     "chat",
     "tanstack",
     "fenwick",
-    "recycle"
+    "recycle",
+    "listwindow@direct",
+    "tanstack@direct",
+    "fenwick@direct",
+    "chat@direct"
   ],
   "throttles": [
     1
@@ -14,7 +18,14 @@
     [
       "S1",
       "S5",
-      "S9"
+      "S12",
+      "A4",
+      "S11"
+    ],
+    [
+      "S8-S1-page",
+      "S9-page",
+      "S11-page"
     ]
   ],
   "runs": 1,

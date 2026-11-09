@@ -42,6 +42,36 @@ for (const [engine, entry] of Object.entries(entries)) {
     out[engine] = {error: String(error).slice(0, 300)};
   }
 }
+// Reference libraries, installed (scripts off) into VBENCH_REFS_DIR by CI.
+const refsDir = process.env.VBENCH_REFS_DIR;
+if (refsDir && fs.existsSync(refsDir)) {
+  const refs = {
+    'virtua (Virtualizer + WindowVirtualizer)': "export {Virtualizer, WindowVirtualizer} from 'virtua';",
+    '@tanstack/react-virtual (useVirtualizer + useWindowVirtualizer, with virtual-core)':
+      "export {useVirtualizer, useWindowVirtualizer} from '@tanstack/react-virtual';",
+    'react-window (List)': "export {List} from 'react-window';",
+    'react-virtuoso (Virtuoso)': "export {Virtuoso} from 'react-virtuoso';",
+  };
+  out.refs = {};
+  for (const [name, contents] of Object.entries(refs)) {
+    try {
+      const result = await build({
+        stdin: {contents, resolveDir: refsDir, loader: 'js'},
+        bundle: true,
+        minify: true,
+        format: 'esm',
+        write: false,
+        platform: 'browser',
+        external: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'],
+        logLevel: 'silent',
+      });
+      const code = result.outputFiles[0].contents;
+      out.refs[name] = {minBytes: code.length, gzipBytes: zlib.gzipSync(code, {level: 9}).length};
+    } catch (error) {
+      out.refs[name] = {error: String(error).slice(0, 300)};
+    }
+  }
+}
 const file = process.argv[2] ?? 'vbench-bundles.json';
 fs.writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`);
 console.log(JSON.stringify(out));

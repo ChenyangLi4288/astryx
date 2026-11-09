@@ -87,7 +87,15 @@ jobs:
         run: pnpm build
       - name: Build the Sandbox
         run: pnpm -F @astryxdesign/sandbox build
-      - name: Engine bundle sizes
+      - name: Install the reference libraries for the size table (scripts off)
+        run: |
+          mkdir -p "$RUNNER_TEMP/vbench-refs"
+          cd "$RUNNER_TEMP/vbench-refs"
+          npm init -y > /dev/null
+          npm install --ignore-scripts --no-audit --no-fund virtua @tanstack/react-virtual react-window react-virtuoso react react-dom
+      - name: Engine and reference bundle sizes
+        env:
+          VBENCH_REFS_DIR: ${{ runner.temp }}/vbench-refs
         run: node bench/vbench/bundle-size.mjs vbench-bundles.json
       - uses: actions/upload-artifact@v7
         with:
@@ -132,6 +140,7 @@ jobs:
           VBENCH_RUNS: ${{ needs.plan.outputs.runs }}
           VBENCH_TEXT: ${{ needs.plan.outputs.text }}
           VBENCH_INTERLEAVE: '1'
+          VBENCH_A1_SCENARIOS: S1,S3,S4,S5,S6,S7
           VBENCH_RESULTS_DIR: vbench-results/g${{ matrix.group }}-t${{ matrix.throttle }}
         run: pnpm exec playwright test --config bench/vbench/playwright.vbench.config.ts
       - uses: actions/upload-artifact@v7

@@ -47,7 +47,13 @@ import {
   scrollBy,
 } from './geometry';
 import {mountRecycler} from './recycle';
-import {BenchStore, rowLabel, type AnchorMode, type BenchRow} from './store';
+import {
+  BenchStore,
+  rowLabel,
+  wrapText,
+  type AnchorMode,
+  type BenchRow,
+} from './store';
 
 type EngineId = 'listwindow' | 'chat' | 'tanstack' | 'fenwick' | 'recycle';
 
@@ -60,6 +66,10 @@ interface BenchParams {
   mode: 'windowed' | 'unwindowed';
   anchor: AnchorMode;
   fixed: number | null;
+  /** A1: React places the rows, or the engine writes positions directly. */
+  placement: 'react' | 'direct';
+  /** Rows hold wrapping text, so a width change changes their heights. */
+  wrap: boolean;
 }
 
 function readParams(): BenchParams {
@@ -77,6 +87,8 @@ function readParams(): BenchParams {
       (engine === 'chat' ? 'end' : 'first-visible')) as AnchorMode,
     fixed:
       fixedRaw != null ? Number(fixedRaw) : engine === 'listwindow' ? 48 : null,
+    placement: q.get('placement') === 'direct' ? 'direct' : 'react',
+    wrap: q.get('wrap') === '1',
   };
 }
 
@@ -112,11 +124,28 @@ function RowContent({
   row,
   index,
   fixed,
+  wrap = false,
 }: {
   row: BenchRow;
   index: number;
   fixed: number | null;
+  wrap?: boolean;
 }) {
+  if (wrap && fixed == null) {
+    return (
+      <>
+        <div style={lineStyle}>
+          <button type="button" data-vbench-control style={controlStyle}>
+            {rowLabel(row, index)}
+          </button>
+        </div>
+        <div style={{whiteSpace: 'normal', overflowWrap: 'anywhere'}}>
+          {wrapText(row)}
+        </div>
+        {row.extra > 0 ? <div style={{height: row.extra}} /> : null}
+      </>
+    );
+  }
   const lines = [];
   for (let i = 1; i < row.lines; i++) {
     lines.push(
@@ -153,17 +182,36 @@ function rowProps(
   };
 }
 
-function useScrollTick(scroller: HTMLElement | null) {
+/**
+ * Re-renders on scroll. With a range key (A1 direct placement), it
+ * re-renders only when the window's row range changes: positions are
+ * written to the rows without React.
+ */
+function useScrollTick(
+  scroller: HTMLElement | null,
+  rangeKey: React.RefObject<(() => string) | null> | null = null,
+) {
   const [, tick] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {
     const target: HTMLElement | Window = scroller ?? window;
-    target.addEventListener('scroll', tick, {passive: true});
+    let last = rangeKey?.current?.() ?? '';
+    const onScroll = () => {
+      if (rangeKey?.current) {
+        const next = rangeKey.current();
+        if (next === last) {
+          return;
+        }
+        last = next;
+      }
+      tick();
+    };
+    target.addEventListener('scroll', onScroll, {passive: true});
     window.addEventListener('resize', tick);
     return () => {
-      target.removeEventListener('scroll', tick);
+      target.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', tick);
     };
-  }, [scroller]);
+  }, [scroller, rangeKey]);
 }
 
 interface EngineProps {
@@ -177,8 +225,12 @@ interface EngineProps {
 
 function FenwickList({store, params, scroller}: EngineProps) {
   const version = useSyncExternalStore(store.subscribe, store.getVersion);
-  useScrollTick(scroller);
+  const isDirect = params.placement === 'direct';
+  const rangeKeyRef = useRef<(() => string) | null>(null);
+  useScrollTick(scroller, isDirect ? rangeKeyRef : null);
   const listRef = useRef<HTMLDivElement>(null);
+  const nodesRef = useRef(new Map<number, HTMLElement>());
+  const renderedRangeRef = useRef('');
   const estimate = 5.5 * 1.5 * remPx();
   const modelRef = useRef<FenwickOffsets | null>(null);
   const keysRef = useRef<string[]>([]);
@@ -227,6 +279,18 @@ function FenwickList({store, params, scroller}: EngineProps) {
   while (end < rows.length && model.offsetOf(end) < bottom) {
     end++;
   }
+  renderedRangeRef.current = `${start}:${end}`;
+  rangeKeyRef.current = () => {
+    const g = readGeometry(scroller, listRef.current);
+    const t = Math.max(0, g.scrollTop - g.startOffset - OVERSCAN_PX);
+    const b = g.scrollTop - g.startOffset + g.viewport + OVERSCAN_PX;
+    const s0 = model.indexAt(t);
+    let e0 = s0;
+    while (e0 < store.rows.length && model.offsetOf(e0) < b) {
+      e0++;
+    }
+    return `${s0}:${e0}`;
+  };
   const focusKey = document.activeElement
     ?.closest('[data-vbench-key]')
     ?.getAttribute('data-vbench-key');
@@ -255,10 +319,30 @@ function FenwickList({store, params, scroller}: EngineProps) {
             correction += delta;
           }
         }
+        if (isDirect) {
+          // Positions go straight to the rows; React renders only when the
+          // window's row range changes.
+          for (const [i, el] of nodesRef.current) {
+            if (el.isConnected) {
+              el.style.transform = `translateY(${model.offsetOf(i)}px)`;
+            }
+          }
+          if (listRef.current) {
+            listRef.current.style.height = `${model.total()}px`;
+          }
+          if (correction !== 0) {
+            scrollBy(scroller, correction);
+          }
+          const key = rangeKeyRef.current?.();
+          if (key !== renderedRangeRef.current) {
+            remeasured();
+          }
+          return;
+        }
         pendingScroll.current += correction;
         remeasured();
       }),
-    [model, scroller, store],
+    [model, scroller, store, isDirect],
   );
   useEffect(() => () => observer.disconnect(), [observer]);
 
@@ -302,6 +386,9 @@ function FenwickList({store, params, scroller}: EngineProps) {
             ref={el => {
               if (el) {
                 observer.observe(el);
+                nodesRef.current.set(i, el);
+              } else {
+                nodesRef.current.delete(i);
               }
             }}
             style={{
@@ -312,7 +399,12 @@ function FenwickList({store, params, scroller}: EngineProps) {
               top: 0,
               transform: `translateY(${model.offsetOf(i)}px)`,
             }}>
-            <RowContent row={row} index={i} fixed={params.fixed} />
+            <RowContent
+              row={row}
+              index={i}
+              fixed={params.fixed}
+              wrap={params.wrap}
+            />
           </div>
         );
       })}
@@ -325,7 +417,8 @@ function FenwickList({store, params, scroller}: EngineProps) {
 
 function ListWindowList({store, params, scroller}: EngineProps) {
   useSyncExternalStore(store.subscribe, store.getVersion);
-  useScrollTick(scroller);
+  const rangeKeyRef = useRef<(() => string) | null>(null);
+  useScrollTick(scroller, params.placement === 'direct' ? rangeKeyRef : null);
   const listRef = useRef<HTMLDivElement>(null);
   const rowHeight = params.fixed ?? 48;
   const rows = store.rows;
@@ -365,6 +458,18 @@ function ListWindowList({store, params, scroller}: EngineProps) {
       }
     }
   });
+  rangeKeyRef.current = () => {
+    const g = readGeometry(scroller, listRef.current);
+    const p = calculateListWindow({
+      rowCount: store.rows.length,
+      rowHeight,
+      viewportHeight: Math.max(1, g.viewport),
+      scrollTop: Math.max(0, g.scrollTop - g.startOffset),
+      startOffset: 0,
+      isMeasured: true,
+    });
+    return `${p?.start ?? 0}:${p?.end ?? 0}`;
+  };
   const indexes: number[] = [];
   for (const segment of plan?.segments ?? []) {
     if (segment.type === 'rows') {
@@ -415,6 +520,7 @@ function TanstackList({store, params, scroller}: EngineProps) {
   const estimate = params.fixed ?? 5.5 * 1.5 * remPx();
   const isPage = scroller == null;
   const focusIndexRef = useRef(-1);
+  const lastKeyRef = useRef('');
   const options = {
     count: rows.length,
     getScrollElement: () => (isPage ? window : scroller),
@@ -451,7 +557,31 @@ function TanstackList({store, params, scroller}: EngineProps) {
       ? observeWindowOffset
       : observeElementOffset) as never,
     measureElement: measureElement as never,
-    onChange: () => rerender(),
+    onChange: (instance: Virtualizer<Element | Window, Element>) => {
+      if (params.placement !== 'direct') {
+        rerender();
+        return;
+      }
+      // Direct placement: while the window's rows stay the same, write each
+      // row's position to its element; React renders only on a range change.
+      const items = instance.getVirtualItems();
+      const key = `${items[0]?.index ?? 0}:${items[items.length - 1]?.index ?? 0}:${items.length}`;
+      if (key !== lastKeyRef.current) {
+        lastKeyRef.current = key;
+        rerender();
+        return;
+      }
+      for (const item of items) {
+        const el = instance.elementsCache.get(item.key) as
+          HTMLElement | undefined;
+        if (el) {
+          el.style.transform = `translateY(${item.start - (isPage ? HEADER_PX : 0)}px)`;
+        }
+      }
+      if (listRef.current) {
+        listRef.current.style.height = `${instance.getTotalSize()}px`;
+      }
+    },
   };
   const ref = useRef<Virtualizer<Element | Window, Element> | null>(null);
   if (ref.current == null) {
@@ -493,7 +623,12 @@ function TanstackList({store, params, scroller}: EngineProps) {
               top: 0,
               transform: `translateY(${item.start - (isPage ? HEADER_PX : 0)}px)`,
             }}>
-            <RowContent row={row} index={item.index} fixed={params.fixed} />
+            <RowContent
+              row={row}
+              index={item.index}
+              fixed={params.fixed}
+              wrap={params.wrap}
+            />
           </div>
         );
       })}
@@ -520,7 +655,12 @@ function ChatList({store, params, scroller}: EngineProps) {
         renderItem={({item: row, index}: {item: BenchRow; index: number}) => {
           return (
             <div {...rowProps(row, index, rows.length, params.fixed)}>
-              <RowContent row={row} index={index} fixed={params.fixed} />
+              <RowContent
+                row={row}
+                index={index}
+                fixed={params.fixed}
+                wrap={params.wrap}
+              />
             </div>
           );
         }}
@@ -551,8 +691,9 @@ function RecycleList({store, params, scroller}: EngineProps) {
       store,
       fixed: params.fixed,
       estimate: params.fixed ?? 5.5 * 1.5 * remPx(),
+      wrap: params.wrap,
     });
-  }, [params.fixed, scroller, store]);
+  }, [params.fixed, params.wrap, scroller, store]);
   return <div ref={listRef} role="list" style={{position: 'relative'}} />;
 }
 
@@ -566,7 +707,12 @@ function Unwindowed({store, params}: EngineProps) {
     <div role="list">
       {rows.map((row, i) => (
         <div key={row.key} {...rowProps(row, i, rows.length, params.fixed)}>
-          <RowContent row={row} index={i} fixed={params.fixed} />
+          <RowContent
+            row={row}
+            index={i}
+            fixed={params.fixed}
+            wrap={params.wrap}
+          />
         </div>
       ))}
     </div>
@@ -598,6 +744,10 @@ function installControls(
     append: (count: number) => store.append(count),
     insertAbove: (count: number) => store.insertAbove(count),
     resize: (key: string, delta: number) => store.resize(key, delta),
+    /** S12: the list's width in px (null restores the full width). */
+    setWidth: (px: number | null) => {
+      document.body.style.width = px == null ? '' : `${px}px`;
+    },
     setAnchor: (mode: AnchorMode, key: string | null = null) => {
       store.anchorMode = mode;
       store.anchorKey = key;

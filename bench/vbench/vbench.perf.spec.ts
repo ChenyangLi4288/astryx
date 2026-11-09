@@ -50,6 +50,41 @@ const RESULTS = path.resolve(
 );
 const TEXT = Number(process.env.VBENCH_TEXT ?? 100);
 
+/**
+ * S11: records, from the first frame after navigation, whether the list is in
+ * the page and how much of the viewport its rows leave uncovered.
+ */
+const FIRST_PAINT_RECORDER = `(() => {
+  window.__vbenchFP = [];
+  const tick = () => {
+    const list = document.querySelector('[role="list"]');
+    if (list) {
+      const scroller = document.querySelector('[data-vbench-scroller]');
+      const top = scroller ? scroller.getBoundingClientRect().top : 0;
+      const height = scroller ? scroller.clientHeight : window.innerHeight;
+      const listTop = list.getBoundingClientRect().top - top;
+      const viewTop = Math.max(0, listTop);
+      const rows = [...document.querySelectorAll('[data-vbench-key]')]
+        .filter(r => r.style.display !== 'none')
+        .map(r => { const b = r.getBoundingClientRect(); return [b.top - top, b.bottom - top]; })
+        .sort((a, b) => a[0] - b[0]);
+      let cursor = viewTop, missing = 0;
+      for (const [t, b] of rows) {
+        if (b <= cursor) continue;
+        if (t >= height) break;
+        if (t > cursor) missing += t - cursor;
+        cursor = Math.max(cursor, b);
+      }
+      if (cursor < height) missing += height - cursor;
+      window.__vbenchFP.push({hasList: true, uncovered: missing});
+    } else {
+      window.__vbenchFP.push({hasList: false, uncovered: 0});
+    }
+    if (window.__vbenchFP.length < 120) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+})();`;
+
 let server: StaticServer | undefined;
 
 test.beforeAll(async ({browser}) => {
@@ -110,12 +145,20 @@ const CELLS: Array<{
   run: number;
 }> = [];
 const SCENARIO_LIST = SET.filter(s => SCENARIO_IDS.has(s.id));
+// A1: an engine written as `name@direct` runs only on these scenarios.
+const A1_SCENARIOS = new Set(
+  (process.env.VBENCH_A1_SCENARIOS ?? 'S1,S3,S4,S5,S6,S7').split(','),
+);
+const runsCell = (engine: string, scenario: {id: string}) =>
+  !engine.includes('@') || A1_SCENARIOS.has(scenario.id);
 if (process.env.VBENCH_INTERLEAVE === '1') {
   for (const scenario of SCENARIO_LIST) {
     for (let run = 0; run < RUNS; run++) {
       ENGINES.forEach((_, i) => {
         const engine = ENGINES[(i + run) % ENGINES.length] ?? ENGINES[0] ?? '';
-        CELLS.push({engine, scenario, run});
+        if (runsCell(engine, scenario)) {
+          CELLS.push({engine, scenario, run});
+        }
       });
     }
   }
@@ -123,7 +166,9 @@ if (process.env.VBENCH_INTERLEAVE === '1') {
   for (const engine of ENGINES) {
     for (const scenario of SCENARIO_LIST) {
       for (let run = 0; run < RUNS; run++) {
-        CELLS.push({engine, scenario, run});
+        if (runsCell(engine, scenario)) {
+          CELLS.push({engine, scenario, run});
+        }
       }
     }
   }
@@ -134,8 +179,29 @@ for (const {engine, scenario, run} of CELLS) {
     {
       test(`${engine} ${scenario.id} run ${run + 1}`, async ({browser}) => {
         test.setTimeout(10 * 60_000);
-        const params = {
-          engine,
+        const [engineName, placement = ''] = engine.split('@');
+        const outFile = path.join(
+          RESULTS,
+          `${process.env.VBENCH_SIDE ? `${process.env.VBENCH_SIDE}__` : ''}${engine}__${scenario.id}__t${THROTTLE}__r${run + 1}.json`,
+        );
+        // A1 cells an engine cannot run are recorded by name, never passed.
+        const unsupported =
+          placement === 'direct' && engineName === 'chat'
+            ? 'not supported: ChatVirtualizer owns its own row placement'
+            : placement === 'direct' && engineName === 'recycle'
+              ? 'not applicable: candidate 5 always places rows directly'
+              : null;
+        if (unsupported) {
+          fs.writeFileSync(
+            outFile,
+            `${JSON.stringify({engine, scenario: scenario.id, run: run + 1, throttle: THROTTLE, unsupported}, null, 2)}\n`,
+          );
+          return;
+        }
+        const params: Record<string, string | number> = {
+          engine: engineName ?? engine,
+          ...(placement ? {placement} : null),
+          ...scenario.params,
           n: scenario.rows,
           seed: SEED + run,
           scroller: scenario.scroller,
@@ -152,12 +218,35 @@ for (const {engine, scenario, run} of CELLS) {
           await cdp.send('Emulation.setCPUThrottlingRate', {rate: THROTTLE});
         }
         await cdp.send('Performance.enable');
+        if (scenario.firstPaint) {
+          await page.addInitScript(FIRST_PAINT_RECORDER);
+        }
         const t0 = Date.now();
         await open(page, url(params));
         const firstRenderMs = Date.now() - t0;
         let error: string | null = null;
         let result;
+        let firstPaint = null;
         try {
+          if (scenario.firstPaint) {
+            await page.waitForTimeout(1500);
+            firstPaint = await page.evaluate(() => {
+              const log =
+                (
+                  window as unknown as {
+                    __vbenchFP: Array<{hasList: boolean; uncovered: number}>;
+                  }
+                ).__vbenchFP ?? [];
+              const withList = log.filter(f => f.hasList);
+              const first = withList[0];
+              const coveredAt = withList.findIndex(f => f.uncovered <= 1);
+              return {
+                pass: first != null && first.uncovered <= 1,
+                framesWithListUntilCovered: coveredAt,
+                firstUncoveredPx: first ? Math.round(first.uncovered) : null,
+              };
+            });
+          }
           result = await scenario.run(page, cdp);
         } catch (e) {
           error = String(e);
@@ -199,15 +288,11 @@ for (const {engine, scenario, run} of CELLS) {
           error,
           timing: result ? frameStats(result.frames) : null,
           correctness: report,
-          extra: result?.extra ?? null,
+          extra: firstPaint
+            ? {...result?.extra, firstPaint}
+            : (result?.extra ?? null),
         };
-        fs.writeFileSync(
-          path.join(
-            RESULTS,
-            `${process.env.VBENCH_SIDE ? `${process.env.VBENCH_SIDE}__` : ''}${engine}__${scenario.id}__t${THROTTLE}__r${run + 1}.json`,
-          ),
-          `${JSON.stringify(out, null, 2)}\n`,
-        );
+        fs.writeFileSync(outFile, `${JSON.stringify(out, null, 2)}\n`);
       });
     }
   }

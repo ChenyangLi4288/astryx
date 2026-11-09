@@ -13,7 +13,7 @@
 
 import {FenwickOffsets} from './fenwick';
 import {OVERSCAN_PX, anchorIndex, readGeometry, scrollBy} from './geometry';
-import {rowLabel, type BenchRow, type BenchStore} from './store';
+import {rowLabel, wrapText, type BenchRow, type BenchStore} from './store';
 
 function fillRow(
   node: HTMLElement,
@@ -21,6 +21,7 @@ function fillRow(
   index: number,
   count: number,
   fixed: number | null,
+  wrap = false,
 ) {
   node.dataset.vbenchKey = row.key;
   node.setAttribute('aria-posinset', String(index + 1));
@@ -32,7 +33,12 @@ function fillRow(
   }
   const body = node.children[1] as HTMLElement | undefined;
   const extra = node.children[2] as HTMLElement | undefined;
-  if (body) {
+  if (body && wrap && fixed == null) {
+    body.replaceChildren();
+    body.style.whiteSpace = 'normal';
+    body.style.overflowWrap = 'anywhere';
+    body.textContent = wrapText(row);
+  } else if (body) {
     const lines = fixed != null ? 0 : row.lines - 1;
     while (body.childElementCount > lines) {
       body.lastElementChild?.remove();
@@ -105,12 +111,14 @@ export function mountRecycler({
   store,
   fixed,
   estimate,
+  wrap = false,
 }: {
   list: HTMLElement;
   scroller: HTMLElement | null;
   store: BenchStore;
   fixed: number | null;
   estimate: number;
+  wrap?: boolean;
 }): () => void {
   const model = new FenwickOffsets(store.rows.length, estimate);
   let keys = store.rows.map(r => r.key);
@@ -195,7 +203,7 @@ export function mountRecycler({
         assigned.set(key, node);
         remeasure = true;
       }
-      fillRow(node, row, index, rows.length, fixed);
+      fillRow(node, row, index, rows.length, fixed, wrap);
       node.style.transform = `translateY(${model.offsetOf(index)}px)`;
     }
     if (remeasure) {
@@ -234,12 +242,16 @@ export function mountRecycler({
   const target: HTMLElement | Window = scroller ?? window;
   target.addEventListener('scroll', schedule, {passive: true});
   window.addEventListener('resize', schedule);
+  // A width change re-wraps rows without a scroll or a window resize.
+  const widthObserver = new ResizeObserver(schedule);
+  widthObserver.observe(list);
   const unsubscribe = store.subscribe(onStore);
   layout();
   return () => {
     target.removeEventListener('scroll', schedule);
     window.removeEventListener('resize', schedule);
     unsubscribe();
+    widthObserver.disconnect();
     cancelAnimationFrame(frame);
     list.replaceChildren();
   };

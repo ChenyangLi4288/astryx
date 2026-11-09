@@ -56,7 +56,11 @@ const LABELS = {
   fenwick: '4 · Prefix-sum tree',
   recycle: '5 · Outside-React recycling (prefix-sum)',
 };
-const SCENARIOS = ['S1', 'S1-text200', 'S2', 'S3', 'S4', 'S5', 'S6', 'S6-item', 'S7', 'S9', 'S8-S1-page', 'S8-S3-page', 'S8-S5-page'];
+const BASE_SCENARIOS = ['S1', 'S1-text200', 'S2', 'S3', 'S4', 'S5', 'S6', 'S6-item', 'S7', 'S9', 'S12', 'A4'];
+const pageId = id => ({S1: 'S8-S1-page', S3: 'S8-S3-page', S5: 'S8-S5-page'})[id] ?? `${id}-page`;
+const SCENARIOS = [...BASE_SCENARIOS, ...BASE_SCENARIOS.map(pageId), 'S11', 'S11-page'];
+const THROTTLES = [...new Set(runs.map(r => r.throttle))].sort((a, b) => a - b);
+const A1_SCENARIOS = ['S1', 'S3', 'S4', 'S5', 'S6', 'S7'];
 
 const cells = new Map();
 for (const r of runs) {
@@ -76,6 +80,7 @@ function summarize(list) {
     p99: median(t.map(x => x.p99)),
     long: median(t.map(x => x.long)),
     dropped: median(t.map(x => x.dropped)),
+    droppedPct: median(t.map(x => (x.frames ? (100 * (x.dropped ?? 0)) / x.frames : null))),
     firstRenderMs: median(list.map(r => r.firstRenderMs)),
     maxPosPx: median(c.map(x => x.maxPositionErrorPx)),
     offsetPx: median(c.map(x => x.maxContentOffsetErrorPx)),
@@ -92,6 +97,11 @@ function summarize(list) {
     heapMb: median(list.map(r => r.extra?.heapMb)),
     s9Pass: list.length ? list.every(r => r.extra?.pass === true) : null,
     s9PassCount: list.filter(r => r.extra?.pass === true).length,
+    firstPaintPassCount: list.filter(r => r.extra?.firstPaint?.pass === true).length,
+    appendP50: median(list.map(r => r.extra?.appendMsP50)),
+    appendP95: median(list.map(r => r.extra?.appendMsP95)),
+    domNodes: median(list.map(r => r.extra?.domNodes)),
+    unsupported: list.find(r => r.unsupported)?.unsupported ?? null,
   };
 }
 
@@ -104,27 +114,40 @@ function correct(s) {
   return s && s.errors === 0 && s.overlapFrames === 0 && s.gapFrames === 0 && s.positionFrames === 0;
 }
 
-function verdicts(engine) {
+function verdicts(engine, frameBar) {
   const why = [];
   for (const sc of ['S1', 'S2', 'S3']) {
     const s = get(engine, sc, 1);
-    if (!s) why.push(`${sc} unthrottled not measured`);
-    // rAF deltas at 60 Hz read 16.7 ± timer jitter: a frame on budget can read
-    // 16.8 ms. A p95 within half a millisecond of the vsync interval, with no
-    // dropped frame, is on budget.
-    else if (s.p95 == null || s.p95 > 17.2 || (s.dropped ?? 0) > 0) why.push(`${sc} p95 ${fmt(s.p95)} ms, ${fmt(s.dropped)} dropped`);
-  }
-  for (const sc of ['S3', 'S4', 'S5', 'S6', 'S6-item', 'S7']) {
-    for (const th of [1, 4]) {
-      const s = get(engine, sc, th);
-      if (!s) continue;
-      if (s.driftPx == null || s.driftPx > 1) why.push(`${sc}@${th}× drift ${fmt(s.driftPx)} px`);
-      if (s.jumps == null || s.jumps > 0) why.push(`${sc}@${th}× jumps ${fmt(s.jumps)}`);
+    if (!s) {
+      why.push(`${sc} unthrottled not measured`);
+    } else {
+      // P1: p95, p99 <= 33 ms, dropped frames <= 1 %. The p95 bar is 16.7 ms
+      // as first written (strict), or within 0.5 ms of the 60 Hz vsync
+      // interval under amendment A10.
+      const p95Bar = frameBar === 'strict' ? 16.7 : 1000 / 60 + 0.5;
+      if (s.p95 == null || s.p95 > p95Bar) why.push(`${sc} p95 ${fmt(s.p95)} ms > ${fmt(p95Bar, 2)}`);
+      if (s.p99 == null || s.p99 > 33) why.push(`${sc} p99 ${fmt(s.p99)} ms > 33`);
+      if (s.droppedPct == null || s.droppedPct > 1) why.push(`${sc} dropped ${fmt(s.droppedPct, 2)} % > 1`);
     }
   }
-  for (const sc of ['S8-S1-page', 'S8-S3-page', 'S8-S5-page', 'S1', 'S3', 'S5']) {
-    const s = get(engine, sc, 1);
-    if (s && !correct(s)) why.push(`${sc} not correct (overlap ${fmt(s.overlapFrames)}, gap ${fmt(s.gapFrames)}, position ${fmt(s.positionFrames)} frames, errors ${s.errors})`);
+  // Anchored-row drift and unprompted jumps in S3–S7, in both scroll areas.
+  for (const base of ['S3', 'S4', 'S5', 'S6', 'S6-item', 'S7']) {
+    for (const sc of [base, pageId(base)]) {
+      for (const th of THROTTLES) {
+        const s = get(engine, sc, th);
+        if (!s) continue;
+        if (s.driftPx == null || s.driftPx > 1) why.push(`${sc}@${th}× drift ${fmt(s.driftPx)} px`);
+        if (s.jumps == null || s.jumps > 0) why.push(`${sc}@${th}× jumps ${fmt(s.jumps)}`);
+      }
+    }
+  }
+  // A correctness failure in any scenario overrides a performance pass.
+  for (const sc of SCENARIOS) {
+    if (sc.startsWith('S11')) continue;
+    for (const th of THROTTLES) {
+      const s = get(engine, sc, th);
+      if (s && !correct(s)) why.push(`${sc}@${th}× not correct (overlap ${fmt(s.overlapFrames)}, gap ${fmt(s.gapFrames)}, misplaced ${fmt(s.positionFrames)} frames, errors ${s.errors})`);
+    }
   }
   return {pass: why.length === 0, why};
 }
@@ -141,43 +164,94 @@ if (cpus.length > 1) {
 }
 
 lines.push('## Verdicts (protocol pass bar)', '');
-lines.push('| Candidate | Pass | min+gzip bytes | Why not |', '|---|---|---|---|');
+lines.push(
+  'Frame bar, per protocol amendment A10 (changed after the smoke data): p95 frame interval within 0.5 ms of the vsync interval (≤ 17.17 ms at 60 Hz), p99 ≤ 33 ms and dropped frames ≤ 1 % (P1), the same for every engine. The strict reading as first written (p95 ≤ 16.7 ms, same p99 and dropped bars) is shown beside it. A correctness failure overrides a performance pass.',
+  '',
+);
+lines.push('| Candidate | Pass (A10) | Pass (strict) | min+gzip bytes | Why not (A10) | Extra under strict |', '|---|---|---|---|---|---|');
 const passers = [];
+const brief = why => `${why.slice(0, 6).join('; ')}${why.length > 6 ? ` (+${why.length - 6} more)` : ''}`;
 for (const engine of ENGINES) {
-  const v = verdicts(engine);
+  const a10 = verdicts(engine, 'vsync');
+  const strict = verdicts(engine, 'strict');
   const bytes = bundles[engine]?.gzipBytes ?? null;
-  if (v.pass) passers.push({engine, bytes});
-  lines.push(`| ${LABELS[engine]} | ${v.pass ? 'yes' : 'no'} | ${fmt(bytes)} | ${v.why.slice(0, 6).join('; ') || ''}${v.why.length > 6 ? ` (+${v.why.length - 6} more)` : ''} |`);
+  if (a10.pass) passers.push({engine, bytes});
+  const strictOnly = strict.why.filter(w => !a10.why.includes(w));
+  lines.push(`| ${LABELS[engine]} | ${a10.pass ? 'yes' : 'no'} | ${strict.pass ? 'yes' : 'no'} | ${fmt(bytes)} | ${brief(a10.why)} | ${brief(strictOnly)} |`);
 }
 lines.push('');
 passers.sort((a, b) => (a.bytes ?? Infinity) - (b.bytes ?? Infinity));
 lines.push(
-  `**Recommendation:** ${passers.length ? `${LABELS[passers[0].engine]} — passes the bar with the fewest bytes among ${passers.length} passer(s).` : 'no candidate passes the full bar; see the tables for the nearest.'}`,
+  `**Recommendation:** ${passers.length ? `${LABELS[passers[0].engine]}: passes the bar (A10) with the fewest bytes among ${passers.length} passer(s).` : 'no candidate passes the full bar; see the tables for the nearest.'}`,
   '',
 );
 
-for (const th of [1, 4]) {
-  lines.push(`## ${th === 1 ? 'Unthrottled' : '4× CPU throttle'}`, '');
+for (const th of THROTTLES) {
+  lines.push(`## ${th === 1 ? 'Unthrottled' : `${th}× CPU throttle`}`, '');
   lines.push(
-    '| Candidate | Scenario | p50 / p95 / p99 ms | long / dropped | first load ms | max · mean pos err px (vs first visible row) | content offset px | overlap / gap / misplaced frames | blank ms | jumps | drift px | heap MB | S9 |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+    '| Candidate | Scenario | p50 / p95 / p99 ms | long / dropped % | first load ms | max · mean pos err px (vs first visible row) | content offset px | overlap / gap / misplaced frames | blank ms | jumps | drift px | heap MB | DOM nodes | append p50 / p95 ms | S9 / S11 |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   );
   for (const engine of ENGINES) {
     for (const sc of SCENARIOS) {
       const s = get(engine, sc, th);
       if (!s) continue;
       lines.push(
-        `| ${LABELS[engine]} | ${sc} | ${fmt(s.p50)} / ${fmt(s.p95)} / ${fmt(s.p99)} | ${fmt(s.long)} / ${fmt(s.dropped)} | ${fmt(s.firstRenderMs, 0)} | ${fmt(s.maxPosPx)} · ${fmt(s.meanPosPx, 2)} | ${fmt(s.offsetPx, 0)} | ${fmt(s.overlapFrames)} / ${fmt(s.gapFrames)} / ${fmt(s.positionFrames)} | ${fmt(s.blankMs, 0)} | ${fmt(s.jumps)} | ${fmt(s.driftPx)} | ${fmt(s.heapMb)} | ${sc === 'S9' ? `${s.s9PassCount}/${s.runs}` : ''}${s.errors ? ` ⚠ ${s.errors} error(s)` : ''} |`,
+        `| ${LABELS[engine]} | ${sc} | ${fmt(s.p50)} / ${fmt(s.p95)} / ${fmt(s.p99)} | ${fmt(s.long)} / ${fmt(s.droppedPct, 2)} | ${fmt(s.firstRenderMs, 0)} | ${fmt(s.maxPosPx)} · ${fmt(s.meanPosPx, 2)} | ${fmt(s.offsetPx, 0)} | ${fmt(s.overlapFrames)} / ${fmt(s.gapFrames)} / ${fmt(s.positionFrames)} | ${fmt(s.blankMs, 0)} | ${fmt(s.jumps)} | ${fmt(s.driftPx)} | ${fmt(s.heapMb)} | ${fmt(s.domNodes, 0)} | ${s.appendP50 == null ? '–' : `${fmt(s.appendP50, 2)} / ${fmt(s.appendP95, 2)}`} | ${sc.startsWith('S9') ? `S9 ${s.s9PassCount}/${s.runs}` : sc.startsWith('S11') ? `first paint ${s.firstPaintPassCount}/${s.runs}` : ''}${s.errors ? ` ⚠ ${s.errors} error(s)` : ''} |`,
       );
     }
   }
   lines.push('');
 }
 
+// A1: React-placed vs direct-placed rows, on the same offset model.
+lines.push('## A1 · Positioning mode (React places rows vs the engine writes positions)', '');
+lines.push(
+  '| Candidate | Scenario | CPU× | React: p95 / p99 ms, dropped % | Direct: p95 / p99 ms, dropped % | Direct correct? |',
+  '|---|---|---|---|---|---|',
+);
+for (const engine of ENGINES) {
+  for (const sc of A1_SCENARIOS) {
+    for (const th of THROTTLES) {
+      const r = engine === 'recycle' ? get('fenwick', sc, th) : get(engine, sc, th);
+      const d = engine === 'recycle' ? get('recycle', sc, th) : get(`${engine}@direct`, sc, th);
+      if (!r && !d) continue;
+      const cell = x => (x ? `${fmt(x.p95)} / ${fmt(x.p99)}, ${fmt(x.droppedPct, 2)}` : '–');
+      const directCell = d?.unsupported ?? (engine === 'chat' ? 'not supported: ChatVirtualizer owns its row placement' : cell(d));
+      lines.push(`| ${LABELS[engine]}${engine === 'recycle' ? ' (React side: candidate 4)' : ''} | ${sc} | ${th} | ${cell(r)} | ${directCell} | ${d && !d.unsupported ? (correct(d) ? 'yes' : 'no') : '–'} |`);
+    }
+  }
+}
+lines.push('');
+
+// Size table: engines and the reference libraries, one bundler and settings.
+if (bundles.refs) {
+  lines.push('## Size (min+gzip, esbuild ESM minify, gzip -9, React external)', '');
+  lines.push('| Entry | min bytes | min+gzip bytes |', '|---|---|---|');
+  for (const [name, b] of Object.entries({...Object.fromEntries(ENGINES.map(e => [LABELS[e], bundles[e]])), ...bundles.refs})) {
+    lines.push(`| ${name} | ${b?.minBytes ?? '–'} | ${b?.gzipBytes ?? (b?.error ? `error: ${String(b.error).slice(0, 80)}` : '–')} |`);
+  }
+  lines.push('');
+}
+
 lines.push('## Findings checks', '');
 lines.push(
+  '- Flagged in the smoke: the prefix-sum engine showed a one-frame overlap and gap right after 50 rows were inserted above (S5). If it repeats here, it is a correctness failure for that engine (see the verdicts).',
+
   '- Text scaling (Table windowing turns off at 200% text): S1-text200 runs S1 with the root text at 200%. An engine passes when it stays windowed and its rows are neither misplaced nor overlapping. Candidate 1 renders a fixed 48 px pitch, so at 200% its rows clip their text by construction; that is the behavior the shared engine must replace.',
   '- Page scroll (ChatVirtualizer on page scroll opened far down, blank): S8-S1-page, S8-S3-page and S8-S5-page run each engine with the page as the scroller and a 120 px header above the list, so the list does not start at the document top. A blank viewport counts as blank time and fails correctness.',
+  '',
+);
+lines.push('## Not measured in this pass (reported by name; never counted as a pass)', '');
+lines.push(
+  '- S10 beyond static 200% text: page and pinch zoom, a mid-session text-scale change, a late web-font load.',
+  '- A2 native scroll anchoring on and off, and Firefox and WebKit.',
+  '- A3 and P8 iOS momentum.',
+  '- A5 keyboard paging (PageUp/PageDown, Home/End, Tab) and live announcements while scrolling.',
+  '- A6 RTL, horizontal, grid, sticky header, 1M rows and display scaling.',
+  '- A7 robustness: many late resizes, server render, leaks across mount cycles, input delay while streaming.',
+  '- A8 find-in-page and print.',
+  '- P3 forced reflows per frame; P5 scroll-to latency; P7 INP.',
   '',
 );
 lines.push('## What was and was not measured', '');
@@ -187,7 +261,7 @@ lines.push(
   '- Candidate 2 (ChatVirtualizer) renders through its own component; the harness supplies only the row content.',
   '- S1 flings are capped at 30 s; the scrolled distance is in the raw results.',
   '- Rects are read in the frame callback, so a commit that lands after it and before paint is seen one frame late.',
-  '- Frame budget: rAF deltas at 60 Hz read 16.7 ms plus timer jitter, so the 16.7 ms p95 bar is read as "p95 within 0.5 ms of the vsync interval and no dropped frame (> 25 ms)".',
+  '- Frame budget: rAF deltas at 60 Hz read 16.7 ms plus timer jitter, so a frame on budget can read 16.8 ms. Amendment A10 sets the bar; the strict reading is shown beside it.',
   '- Flings and drags are wheel events at 60 Hz (a fling\'s deltas decay like trackpad momentum); Chromium\'s synthetic touch gestures did not scroll these pages headless. Touch behavior is not measured.',
   '- Not measured: real screen-reader speech (S9 checks focus and aria-posinset in the DOM), touch devices, WebKit/Firefox.',
 );

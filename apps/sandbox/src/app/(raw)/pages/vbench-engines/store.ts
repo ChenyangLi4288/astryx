@@ -104,3 +104,17 @@ export class BenchStore {
 export function rowLabel(row: BenchRow, index: number): string {
   return `Row ${index + 1} · ${row.key}`;
 }
+
+const WRAP_WORDS =
+  'rows hold wrapping text here so that a change in the width of the list changes the height of each row'.split(
+    ' ',
+  );
+
+/** Wrapping text for a row: about six words per line of the row. */
+export function wrapText(row: BenchRow): string {
+  const words: string[] = [];
+  for (let i = 0; i < row.lines * 6; i++) {
+    words.push(WRAP_WORDS[(i + row.key.length) % WRAP_WORDS.length] ?? 'row');
+  }
+  return words.join(' ');
+}
