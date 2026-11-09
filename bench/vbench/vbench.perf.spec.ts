@@ -117,6 +117,7 @@ for (const engine of ENGINES) {
         };
         const context = await browser.newContext({
           viewport: {width: 800, height: 900},
+          hasTouch: true,
         });
         const page = await context.newPage();
         const cdp = await context.newCDPSession(page);
@@ -141,6 +142,7 @@ for (const engine of ENGINES) {
           // Ground truth: the same rows unwindowed, with the same mutations.
           const truthContext = await browser.newContext({
             viewport: {width: 800, height: 900},
+            hasTouch: true,
           });
           const truthPage = await truthContext.newPage();
           await open(truthPage, url({...params, mode: 'unwindowed'}));

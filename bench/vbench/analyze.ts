@@ -76,8 +76,19 @@ export interface CorrectnessReport {
   overlapFrames: number;
   gapFrames: number;
   positionFrames: number;
+  /**
+   * Largest error of a row's place relative to the first visible row, px:
+   * mispositioned rows, wrong heights or seams. This is the 1 px check.
+   */
   maxPositionErrorPx: number;
   meanPositionErrorPx: number;
+  /**
+   * Largest difference between where the first visible row sits in the
+   * content and where it sits in the unwindowed render, px: how far an
+   * engine's estimated offsets are from the measured content. Reported, not
+   * held to 1 px: an estimating engine differs until it measures the rows.
+   */
+  maxContentOffsetErrorPx: number;
   /** Frames where mounted rows do not cover the whole viewport. */
   blankFrames: number;
   /** Total time with an uncovered viewport, ms. */
@@ -157,6 +168,7 @@ export function checkFrames(
   let maxPositionErrorPx = 0;
   let positionErrorSum = 0;
   let positionErrorCount = 0;
+  let maxContentOffsetErrorPx = 0;
   let blankFrames = 0;
   let blankMs = 0;
   frames.forEach((frame, index) => {
@@ -169,14 +181,29 @@ export function checkFrames(
     let hasGap = false;
     let hasPosition = false;
     const rows = [...frame.rows].sort((a, b) => a.top - b.top);
+    // Rows are compared to the unwindowed render relative to the first
+    // visible row, so an engine's estimated offsets for rows it has not
+    // measured do not count as misplaced rows.
+    const reference =
+      rows.find(r => r.bottom > frame.scroll && truth.has(r.key)) ??
+      rows.find(r => truth.has(r.key));
+    const referenceTruth = reference ? truth.get(reference.key) : undefined;
+    const shift =
+      reference && referenceTruth ? referenceTruth.top - reference.top : 0;
+    if (checkPosition) {
+      maxContentOffsetErrorPx = Math.max(
+        maxContentOffsetErrorPx,
+        Math.abs(shift),
+      );
+    }
     for (const row of rows) {
       const expected = truth.get(row.key);
       if (!expected || !checkPosition) {
         continue;
       }
       const error = Math.max(
-        Math.abs(row.top - expected.top),
-        Math.abs(row.bottom - expected.bottom),
+        Math.abs(row.top + shift - expected.top),
+        Math.abs(row.bottom + shift - expected.bottom),
       );
       positionErrorSum += error;
       positionErrorCount += 1;
@@ -247,6 +274,7 @@ export function checkFrames(
     gapFrames,
     positionFrames,
     maxPositionErrorPx: round2(maxPositionErrorPx),
+    maxContentOffsetErrorPx: round2(maxContentOffsetErrorPx),
     meanPositionErrorPx: round2(
       positionErrorCount === 0 ? 0 : positionErrorSum / positionErrorCount,
     ),

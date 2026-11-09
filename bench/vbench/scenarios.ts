@@ -160,6 +160,11 @@ function def(
 
 const s1 = (scroller: ScenarioDef['scroller'], id: string) =>
   def(id, 10_000, 'first-visible', scroller, async (page, cdp) => {
+    // Every engine starts at the top: ChatVirtualizer opens at the end.
+    for (let i = 0; i < 5; i++) {
+      await scrollToFraction(page, 0);
+      await page.waitForTimeout(100);
+    }
     await startRecording(page, {rects: true});
     const flings = await flingDown(page, cdp, 30_000);
     await settle(page, 500);

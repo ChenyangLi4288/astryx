@@ -79,6 +79,24 @@ describe('checkFrames', () => {
     expect(gap.maxPositionErrorPx).toBe(5);
   });
 
+  it('does not count a consistent offset as misplaced rows, but reports it', () => {
+    const report = checkFrames(
+      [
+        frame(
+          [
+            ['0', 500, 540],
+            ['1', 540, 580],
+            ['2', 580, 620],
+          ],
+          {scroll: 500},
+        ),
+      ],
+      truth,
+    );
+    expect(report.positionFrames).toBe(0);
+    expect(report.maxContentOffsetErrorPx).toBe(500);
+  });
+
   it('allows 1 px of error', () => {
     const report = checkFrames(
       [

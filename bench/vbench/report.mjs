@@ -78,6 +78,7 @@ function summarize(list) {
     dropped: median(t.map(x => x.dropped)),
     firstRenderMs: median(list.map(r => r.firstRenderMs)),
     maxPosPx: median(c.map(x => x.maxPositionErrorPx)),
+    offsetPx: median(c.map(x => x.maxContentOffsetErrorPx)),
     meanPosPx: median(c.map(x => x.meanPositionErrorPx)),
     worstPosPx: max(c.map(x => x.maxPositionErrorPx)),
     overlapFrames: median(c.map(x => x.overlapFrames)),
@@ -150,15 +151,15 @@ lines.push(
 for (const th of [1, 4]) {
   lines.push(`## ${th === 1 ? 'Unthrottled' : '4× CPU throttle'}`, '');
   lines.push(
-    '| Candidate | Scenario | p50 / p95 / p99 ms | long / dropped | first load ms | max · mean pos err px | overlap / gap / misplaced frames | blank ms | jumps | drift px | heap MB | S9 |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|',
+    '| Candidate | Scenario | p50 / p95 / p99 ms | long / dropped | first load ms | max · mean pos err px (vs first visible row) | content offset px | overlap / gap / misplaced frames | blank ms | jumps | drift px | heap MB | S9 |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   );
   for (const engine of ENGINES) {
     for (const sc of SCENARIOS) {
       const s = get(engine, sc, th);
       if (!s) continue;
       lines.push(
-        `| ${LABELS[engine]} | ${sc} | ${fmt(s.p50)} / ${fmt(s.p95)} / ${fmt(s.p99)} | ${fmt(s.long)} / ${fmt(s.dropped)} | ${fmt(s.firstRenderMs, 0)} | ${fmt(s.maxPosPx)} · ${fmt(s.meanPosPx, 2)} | ${fmt(s.overlapFrames)} / ${fmt(s.gapFrames)} / ${fmt(s.positionFrames)} | ${fmt(s.blankMs, 0)} | ${fmt(s.jumps)} | ${fmt(s.driftPx)} | ${fmt(s.heapMb)} | ${sc === 'S9' ? `${s.s9PassCount}/${s.runs}` : ''}${s.errors ? ` ⚠ ${s.errors} error(s)` : ''} |`,
+        `| ${LABELS[engine]} | ${sc} | ${fmt(s.p50)} / ${fmt(s.p95)} / ${fmt(s.p99)} | ${fmt(s.long)} / ${fmt(s.dropped)} | ${fmt(s.firstRenderMs, 0)} | ${fmt(s.maxPosPx)} · ${fmt(s.meanPosPx, 2)} | ${fmt(s.offsetPx, 0)} | ${fmt(s.overlapFrames)} / ${fmt(s.gapFrames)} / ${fmt(s.positionFrames)} | ${fmt(s.blankMs, 0)} | ${fmt(s.jumps)} | ${fmt(s.driftPx)} | ${fmt(s.heapMb)} | ${sc === 'S9' ? `${s.s9PassCount}/${s.runs}` : ''}${s.errors ? ` ⚠ ${s.errors} error(s)` : ''} |`,
       );
     }
   }
