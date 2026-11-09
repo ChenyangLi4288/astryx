@@ -50,6 +50,21 @@ engine's min+gzip bytes.
    and uploads `vbench-report` (report.md and summary.json; also in the run
    summary).
 
+## Compare a before and an after ref (engine-swap PRs)
+
+1. In `compare.json`, set `before` (full SHA, e.g. main's) and `after` (full
+   SHA of the PR head), a `label`, and the `cases` (today: `table`).
+2. In `run.json`, set `"mode": "compare"`.
+3. Acquire the `bakeoff` key, commit, run check-no-internal, push.
+4. The workflow overlays `overlay/vbench/page.tsx` (public component API
+   only) onto both refs, builds each, and measures both on the same runner
+   type at 1× and 4× CPU and 100% and 200% text. The `vbench-compare-report`
+   artifact (and the run summary) holds `compare.md`: before → after per
+   scenario, with a verdict per row.
+
+Component scenarios: fling 10k and 100k, wheel, drag, jumps to 25/50/75% of
+100k and back, 50 rows inserted above the viewport, and per-append cost.
+
 ## Run locally (analysis only; no browser on the M5)
 
 `node node_modules/vitest/vitest.mjs run --config bench/vbench/vitest.config.ts --root .`

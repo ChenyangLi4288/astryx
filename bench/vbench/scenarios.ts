@@ -425,6 +425,88 @@ const s9 = def('S9', 10_000, 'first-visible', 'container', async page => {
   };
 });
 
+/** Wheel: 300 steps of 120 px. */
+const wheelScenario = (rows: number, id: string) =>
+  def(id, rows, 'first-visible', 'container', async page => {
+    await startRecording(page, {rects: true});
+    await setInput(page, true);
+    const viewport = page.viewportSize() ?? {width: 800, height: 600};
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    for (let i = 0; i < 300; i++) {
+      await page.mouse.wheel(0, 120);
+      await page.waitForTimeout(16);
+    }
+    await setInput(page, false);
+    await settle(page, 500);
+    return {frames: await stopRecording(page), mutations: [], extra: {}};
+  });
+
+/** Drag: 10 touch drags of 600 px at 1200 px/s, no momentum. */
+const dragScenario = (rows: number, id: string) =>
+  def(id, rows, 'first-visible', 'container', async (page, cdp) => {
+    await startRecording(page, {rects: true});
+    await setInput(page, true);
+    for (let i = 0; i < 10; i++) {
+      await gesture(page, cdp, {distance: 600, speed: 1200, momentum: false});
+    }
+    await setInput(page, false);
+    await settle(page, 500);
+    return {frames: await stopRecording(page), mutations: [], extra: {}};
+  });
+
+/** Per-append cost: 50 single appends, each timed to its next frame. */
+const appendCost = def(
+  'APPEND',
+  10_000,
+  'first-visible',
+  'container',
+  async page => {
+    const mutations: Mutation[] = [];
+    await startRecording(page, {rects: false});
+    const costs = await page.evaluate(
+      () =>
+        new Promise<number[]>(resolve => {
+          const api = (window as unknown as {__vbench: Api}).__vbench;
+          const out: number[] = [];
+          const step = () => {
+            const t0 = performance.now();
+            api.append(1);
+            requestAnimationFrame(() => {
+              out.push(performance.now() - t0);
+              if (out.length < 50) {
+                setTimeout(step, 50);
+              } else {
+                resolve(out);
+              }
+            });
+          };
+          step();
+        }),
+    );
+    for (let i = 0; i < 50; i++) {
+      mutations.push({kind: 'append', count: 1});
+    }
+    const sorted = [...costs].sort((a, b) => a - b);
+    return {
+      frames: await stopRecording(page),
+      mutations,
+      extra: {appendMsP50: sorted[24] ?? null, appendMsP95: sorted[47] ?? null},
+    };
+  },
+);
+
+/** Scenarios for component pages (a Table case), lane 1's engine-swap checks. */
+export const COMPONENT_SCENARIOS: ScenarioDef[] = [
+  s1('container', 'C-fling-10k'),
+  {...s1('container', 'C-fling-100k'), rows: 100_000},
+  wheelScenario(10_000, 'C-wheel-10k'),
+  dragScenario(10_000, 'C-drag-10k'),
+  {...s2, id: 'C-jump-100k'},
+  {...s5('container', 'C-insert-above'), id: 'C-insert-above'},
+  {...s6('first-visible', 'C-resize'), id: 'C-resize'},
+  appendCost,
+];
+
 export const SCENARIOS: ScenarioDef[] = [
   s1('container', 'S1'),
   s2,

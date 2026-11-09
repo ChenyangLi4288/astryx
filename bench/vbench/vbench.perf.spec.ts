@@ -24,8 +24,11 @@ import {
 } from '../../internal/a11y-spec/src/storybook';
 import {checkFrames, frameStats, median, stagedTruth} from './analyze';
 import {readGroundTruth} from './collect';
-import {SCENARIOS, replayStages} from './scenarios';
+import {COMPONENT_SCENARIOS, SCENARIOS, replayStages} from './scenarios';
 
+const PAGE = process.env.VBENCH_PAGE ?? 'vbench-engines';
+const SET =
+  process.env.VBENCH_SET === 'components' ? COMPONENT_SCENARIOS : SCENARIOS;
 const ENGINES = (
   process.env.VBENCH_ENGINES ?? 'listwindow,chat,tanstack,fenwick,recycle'
 )
@@ -33,7 +36,7 @@ const ENGINES = (
   .map(s => s.trim())
   .filter(Boolean);
 const SCENARIO_IDS = new Set(
-  (process.env.VBENCH_SCENARIOS ?? SCENARIOS.map(s => s.id).join(','))
+  (process.env.VBENCH_SCENARIOS ?? SET.map(s => s.id).join(','))
     .split(',')
     .map(s => s.trim())
     .filter(Boolean),
@@ -51,9 +54,8 @@ let server: StaticServer | undefined;
 
 test.beforeAll(async ({browser}) => {
   server = await serveStatic(SITE, {
-    sentinel: 'pages/vbench-engines/index.html',
-    missing: root =>
-      `No built Sandbox with the vbench engines page at ${root}.`,
+    sentinel: `pages/${PAGE}/index.html`,
+    missing: root => `No built Sandbox with the ${PAGE} page at ${root}.`,
   });
   fs.mkdirSync(RESULTS, {recursive: true});
   const context = await browser.newContext();
@@ -86,7 +88,7 @@ function url(params: Record<string, string | number>): string {
   const q = new URLSearchParams(
     Object.entries(params).map(([k, v]) => [k, String(v)]),
   );
-  return `${server?.origin ?? ''}/pages/vbench-engines/?${q.toString()}`;
+  return `${server?.origin ?? ''}/pages/${PAGE}/?${q.toString()}`;
 }
 
 async function open(page: Page, href: string): Promise<void> {
@@ -101,7 +103,7 @@ async function open(page: Page, href: string): Promise<void> {
 }
 
 for (const engine of ENGINES) {
-  for (const scenario of SCENARIOS.filter(s => SCENARIO_IDS.has(s.id))) {
+  for (const scenario of SET.filter(s => SCENARIO_IDS.has(s.id))) {
     for (let run = 0; run < RUNS; run++) {
       test(`${engine} ${scenario.id} run ${run + 1}`, async ({browser}) => {
         test.setTimeout(10 * 60_000);
@@ -158,6 +160,7 @@ for (const engine of ENGINES) {
         }
         const out = {
           engine,
+          side: process.env.VBENCH_SIDE ?? null,
           scenario: scenario.id,
           run: run + 1,
           seed: SEED + run,
@@ -172,7 +175,7 @@ for (const engine of ENGINES) {
         fs.writeFileSync(
           path.join(
             RESULTS,
-            `${engine}__${scenario.id}__t${THROTTLE}__r${run + 1}.json`,
+            `${process.env.VBENCH_SIDE ? `${process.env.VBENCH_SIDE}__` : ''}${engine}__${scenario.id}__t${THROTTLE}__r${run + 1}.json`,
           ),
           `${JSON.stringify(out, null, 2)}\n`,
         );

@@ -5,13 +5,13 @@
     "skipLibCheck": true,
     "ignoreDeprecations": "6.0", "baseUrl": "../..",
     "paths": {
-      "@astryxdesign/lab": ["packages/lab/src/index.ts"],
+      "@astryxdesign/lab": ["packages/lab/src/index.ts"], "@astryxdesign/core": ["packages/core/src/index.ts"],
       "@tanstack/virtual-core": ["/tmp/tsv/package/dist/esm/index.d.ts"]
     }
   },
   "include": [
     "../../apps/sandbox/src/app/(raw)/pages/vbench-engines/*.ts",
     "../../apps/sandbox/src/app/(raw)/pages/vbench-engines/*.tsx",
-    "../../bench/vbench/*.ts"
+    "../../bench/vbench/*.ts", "../../bench/vbench/overlay/vbench/*.tsx"
   ]
 }

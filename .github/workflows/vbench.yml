@@ -1,8 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
-# Virtualizer bake-off and engine-swap checks (bench/vbench/README.md).
+# Virtualizer bake-off and engine-swap compare (bench/vbench/README.md).
 # Runs only on pushes to the scratch branch bench/virtualizer-bakeoff, which
-# is never merged. No secrets; read-only token.
+# is never merged. No secrets; read-only token. bench/vbench/run.json picks
+# the mode: `bakeoff` (the protocol's five engines) or `compare` (before and
+# after refs from compare.json, through the same component page).
 
 name: vbench
 
@@ -23,28 +25,46 @@ jobs:
     permissions:
       contents: read
     outputs:
+      mode: ${{ steps.plan.outputs.mode }}
       matrix: ${{ steps.plan.outputs.matrix }}
+      sides: ${{ steps.plan.outputs.sides }}
       scenarios: ${{ steps.plan.outputs.scenarios }}
       runs: ${{ steps.plan.outputs.runs }}
       text: ${{ steps.plan.outputs.text }}
+      cases: ${{ steps.plan.outputs.cases }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          sparse-checkout: bench/vbench/run.json
+          sparse-checkout: bench/vbench
           sparse-checkout-cone-mode: false
       - id: plan
         run: |
           node -e '
-            const run = require("./bench/vbench/run.json");
-            const include = [];
-            for (const engine of run.engines) for (const throttle of run.throttles) include.push({engine, throttle});
             const fs = require("fs");
-            fs.appendFileSync(process.env.GITHUB_OUTPUT,
-              `matrix=${JSON.stringify({include})}\nscenarios=${run.scenarios}\nruns=${run.runs}\ntext=${run.text}\n`);
+            const run = require("./bench/vbench/run.json");
+            const out = [];
+            if (run.mode === "compare") {
+              const c = require("./bench/vbench/compare.json");
+              if (!/^[0-9a-f]{40}$/.test(c.before) || !/^[0-9a-f]{40}$/.test(c.after)) throw new Error("compare.json needs full before and after SHAs");
+              const include = [];
+              for (const side of ["before", "after"]) for (const throttle of c.throttles) for (const text of c.texts) include.push({side, throttle, text, ref: c[side]});
+              out.push("mode=compare", `matrix=${JSON.stringify({include})}`,
+                `sides=${JSON.stringify({include: [{side: "before", ref: c.before}, {side: "after", ref: c.after}]})}`,
+                `scenarios=${c.scenarios}`, `runs=${c.runs}`, "text=100", `cases=${c.cases.join(",")}`);
+            } else {
+              const include = [];
+              for (const engine of run.engines) for (const throttle of run.throttles) include.push({engine, throttle});
+              out.push("mode=bakeoff", `matrix=${JSON.stringify({include})}`, `sides=${JSON.stringify({include: [{side: "bench", ref: ""}]})}`,
+                `scenarios=${run.scenarios}`, `runs=${run.runs}`, `text=${run.text}`, "cases=");
+            }
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, out.join("\n") + "\n");
           '
 
+  # ---------------------------------------------------------------- bakeoff
   build:
+    needs: [plan]
+    if: needs.plan.outputs.mode == 'bakeoff'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -75,6 +95,7 @@ jobs:
 
   measure:
     needs: [plan, build]
+    if: needs.plan.outputs.mode == 'bakeoff'
     runs-on: ubuntu-latest
     timeout-minutes: 75
     permissions:
@@ -113,8 +134,8 @@ jobs:
           if-no-files-found: warn
 
   report:
-    needs: [measure]
-    if: always()
+    needs: [plan, measure]
+    if: always() && needs.plan.outputs.mode == 'bakeoff'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -140,5 +161,115 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: vbench-report
+          path: vbench-report
+          retention-days: 30
+
+  # ---------------------------------------------------------------- compare
+  compare-build:
+    needs: [plan]
+    if: needs.plan.outputs.mode == 'compare'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.sides) }}
+    steps:
+      - name: Check out the ref under test
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.ref }}
+      - name: Check out the bench
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          path: .vbench
+          sparse-checkout: bench/vbench
+          sparse-checkout-cone-mode: false
+      - name: Overlay the vbench page
+        run: node .vbench/bench/vbench/overlay.mjs .
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup
+      - name: Build the packages
+        run: pnpm build
+      - name: Build the Sandbox
+        run: pnpm -F @astryxdesign/sandbox build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vbench-sandbox-${{ matrix.side }}
+          path: apps/sandbox/out
+          retention-days: 3
+          if-no-files-found: error
+
+  compare-measure:
+    needs: [plan, compare-build]
+    if: needs.plan.outputs.mode == 'compare'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup
+      - name: Install Chromium
+        run: npx playwright install chromium
+      - uses: actions/download-artifact@v8
+        with:
+          name: vbench-sandbox-${{ matrix.side }}
+          path: apps/sandbox/out
+      - name: Measure
+        env:
+          VBENCH_PAGE: vbench
+          VBENCH_SET: components
+          VBENCH_ROW_CLOSEST: tr
+          VBENCH_SIDE: ${{ matrix.side }}
+          VBENCH_ENGINES: ${{ needs.plan.outputs.cases }}
+          VBENCH_THROTTLE: ${{ matrix.throttle }}
+          VBENCH_TEXT: ${{ matrix.text }}
+          VBENCH_SCENARIOS: ${{ needs.plan.outputs.scenarios }}
+          VBENCH_RUNS: ${{ needs.plan.outputs.runs }}
+          VBENCH_RESULTS_DIR: vbench-results/${{ matrix.side }}-t${{ matrix.throttle }}-x${{ matrix.text }}
+        run: pnpm exec playwright test --config bench/vbench/playwright.vbench.config.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vbench-results-${{ matrix.side }}-t${{ matrix.throttle }}-x${{ matrix.text }}
+          path: vbench-results
+          retention-days: 30
+          if-no-files-found: warn
+
+  compare-report:
+    needs: [plan, compare-measure]
+    if: always() && needs.plan.outputs.mode == 'compare'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: bench/vbench
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: vbench-results-*
+          path: vbench-results
+      - name: Aggregate
+        run: |
+          node bench/vbench/compare-report.mjs vbench-results bench/vbench/compare.json vbench-report
+          cat vbench-report/compare.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vbench-compare-report
           path: vbench-report
           retention-days: 30

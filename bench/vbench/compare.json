@@ -1,0 +1,10 @@
+{
+  "before": "",
+  "after": "",
+  "label": "",
+  "cases": ["table"],
+  "scenarios": "C-fling-10k,C-fling-100k,C-wheel-10k,C-drag-10k,C-jump-100k,C-insert-above,APPEND",
+  "throttles": [1, 4],
+  "texts": [100, 200],
+  "runs": 5
+}

@@ -23,12 +23,20 @@ export interface ListContract {
   keyAttribute: string;
   /** Selector for the scroller; when it matches nothing, the page scrolls. */
   scrollerSelector: string;
+  /**
+   * When the key sits inside the row (a Table cell), the selector of the
+   * row element to measure, matched with `closest`.
+   */
+  rowClosest?: string;
 }
 
 export const DEFAULT_CONTRACT: ListContract = {
   rowSelector: '[data-vbench-key]',
   keyAttribute: 'data-vbench-key',
   scrollerSelector: '[data-vbench-scroller]',
+  ...(process.env.VBENCH_ROW_CLOSEST
+    ? {rowClosest: process.env.VBENCH_ROW_CLOSEST}
+    : null),
 };
 
 /** Reads every mounted row's content-space rect, in the page. */
@@ -39,12 +47,13 @@ function readRowsSource(contract: ListContract): string {
     const scroll = scroller ? scroller.scrollTop : window.scrollY;
     const viewport = scroller ? scroller.clientHeight : window.innerHeight;
     const rows = [];
-    for (const el of document.querySelectorAll(${JSON.stringify(contract.rowSelector)})) {
+    for (const keyed of document.querySelectorAll(${JSON.stringify(contract.rowSelector)})) {
+      const el = ${contract.rowClosest ? `keyed.closest(${JSON.stringify(contract.rowClosest)}) || keyed` : 'keyed'};
       if (el.style.display === 'none') continue;
       const rect = el.getBoundingClientRect();
       if (rect.height === 0) continue;
       rows.push({
-        key: el.getAttribute(${JSON.stringify(contract.keyAttribute)}) || '',
+        key: keyed.getAttribute(${JSON.stringify(contract.keyAttribute)}) || '',
         top: rect.top - originTop + scroll,
         bottom: rect.bottom - originTop + scroll,
       });
