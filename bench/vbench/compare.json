@@ -1,10 +1,16 @@
 {
-  "before": "",
-  "after": "",
-  "label": "",
-  "cases": ["table"],
-  "scenarios": "C-fling-10k,C-fling-100k,C-wheel-10k,C-drag-10k,C-jump-100k,C-insert-above,APPEND",
-  "throttles": [1, 4],
-  "texts": [100, 200],
-  "runs": 5
+  "before": "2e6162c9ac8516aa85003d8c2a6714ad8979fe1e",
+  "after": "2e6162c9ac8516aa85003d8c2a6714ad8979fe1e",
+  "label": "smoke: main vs main",
+  "cases": [
+    "table"
+  ],
+  "scenarios": "C-fling-10k,C-insert-above,APPEND",
+  "throttles": [
+    1
+  ],
+  "texts": [
+    100
+  ],
+  "runs": 1
 }

@@ -196,9 +196,17 @@ export function checkFrames(
         Math.abs(shift),
       );
     }
+    // Only rows near the viewport are checked: a row kept mounted far away
+    // (for example, the focused row) sits past rows the engine has only
+    // estimated, and nobody sees it.
+    const nearTop = frame.scroll - frame.viewport;
+    const nearBottom = frame.scroll + 2 * frame.viewport;
     for (const row of rows) {
       const expected = truth.get(row.key);
       if (!expected || !checkPosition) {
+        continue;
+      }
+      if (row.bottom < nearTop || row.top > nearBottom) {
         continue;
       }
       const error = Math.max(

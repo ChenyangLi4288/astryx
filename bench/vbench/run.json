@@ -1,5 +1,5 @@
 {
-  "mode": "bakeoff",
+  "mode": "both",
   "engines": [
     "listwindow",
     "chat",
@@ -10,7 +10,13 @@
   "throttles": [
     1
   ],
-  "scenarios": "S1,S5,S9",
+  "groups": [
+    [
+      "S1",
+      "S5",
+      "S9"
+    ]
+  ],
   "runs": 1,
   "text": 100
 }

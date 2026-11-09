@@ -56,7 +56,7 @@ const LABELS = {
   fenwick: '4 · Prefix-sum tree',
   recycle: '5 · Outside-React recycling (prefix-sum)',
 };
-const SCENARIOS = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S6-item', 'S7', 'S9', 'S8-S1-page', 'S8-S3-page', 'S8-S5-page'];
+const SCENARIOS = ['S1', 'S1-text200', 'S2', 'S3', 'S4', 'S5', 'S6', 'S6-item', 'S7', 'S9', 'S8-S1-page', 'S8-S3-page', 'S8-S5-page'];
 
 const cells = new Map();
 for (const r of runs) {
@@ -109,7 +109,10 @@ function verdicts(engine) {
   for (const sc of ['S1', 'S2', 'S3']) {
     const s = get(engine, sc, 1);
     if (!s) why.push(`${sc} unthrottled not measured`);
-    else if (s.p95 == null || s.p95 > 16.7) why.push(`${sc} p95 ${fmt(s.p95)} ms > 16.7`);
+    // rAF deltas at 60 Hz read 16.7 ± timer jitter: a frame on budget can read
+    // 16.8 ms. A p95 within half a millisecond of the vsync interval, with no
+    // dropped frame, is on budget.
+    else if (s.p95 == null || s.p95 > 17.2 || (s.dropped ?? 0) > 0) why.push(`${sc} p95 ${fmt(s.p95)} ms, ${fmt(s.dropped)} dropped`);
   }
   for (const sc of ['S3', 'S4', 'S5', 'S6', 'S6-item', 'S7']) {
     for (const th of [1, 4]) {
@@ -129,8 +132,13 @@ function verdicts(engine) {
 const lines = [];
 lines.push('# Virtualizer bake-off results', '');
 const cpus = [...new Set(runners.map(r => r.cpu))];
-lines.push(`Runners: ${runners.length} jobs; CPU model(s): ${cpus.join(' | ') || 'unknown'}. Medians of ${median(runs.map(() => 1)) ? 'all' : 0} runs per cell.`, '');
-if (cpus.length > 1) lines.push('**Warning: more than one CPU model; compare only within one model.**', '');
+const runsPerCell = median([...cells.values()].map(list => list.length));
+lines.push(`Runners: ${runners.length} jobs; CPU model(s): ${cpus.join(' | ') || 'unknown'}. Medians of ${runsPerCell ?? 0} runs per cell.`, '');
+if (cpus.length > 1) {
+  lines.push('Each job runs every engine for its scenarios, so engines are compared on one CPU model within a scenario. Absolute numbers differ between scenarios run on different models:', '');
+  for (const r of runners) lines.push(`- ${path.basename(r.job)}: ${r.cpu} (calibration ${r.calibrationMs} ms, ${r.throttle}× throttle)`);
+  lines.push('');
+}
 
 lines.push('## Verdicts (protocol pass bar)', '');
 lines.push('| Candidate | Pass | min+gzip bytes | Why not |', '|---|---|---|---|');
@@ -166,6 +174,12 @@ for (const th of [1, 4]) {
   lines.push('');
 }
 
+lines.push('## Findings checks', '');
+lines.push(
+  '- Text scaling (Table windowing turns off at 200% text): S1-text200 runs S1 with the root text at 200%. An engine passes when it stays windowed and its rows are neither misplaced nor overlapping. Candidate 1 renders a fixed 48 px pitch, so at 200% its rows clip their text by construction; that is the behavior the shared engine must replace.',
+  '- Page scroll (ChatVirtualizer on page scroll opened far down, blank): S8-S1-page, S8-S3-page and S8-S5-page run each engine with the page as the scroller and a 120 px header above the list, so the list does not start at the document top. A blank viewport counts as blank time and fails correctness.',
+  '',
+);
 lines.push('## What was and was not measured', '');
 lines.push(
   '- Measured: rAF frame deltas; every frame\'s mounted-row rects against an unwindowed render of the same seeded rows with the same mutations (1 px tolerance; 2 frames of grace after each insert or resize); viewport coverage; anchored-row movement without input; JS heap after S2 (after GC); first load to ready; S9 focus and row identity per frame; min+gzip of each engine alone (React external).',
@@ -173,6 +187,8 @@ lines.push(
   '- Candidate 2 (ChatVirtualizer) renders through its own component; the harness supplies only the row content.',
   '- S1 flings are capped at 30 s; the scrolled distance is in the raw results.',
   '- Rects are read in the frame callback, so a commit that lands after it and before paint is seen one frame late.',
+  '- Frame budget: rAF deltas at 60 Hz read 16.7 ms plus timer jitter, so the 16.7 ms p95 bar is read as "p95 within 0.5 ms of the vsync interval and no dropped frame (> 25 ms)".',
+  '- Flings and drags are wheel events at 60 Hz (a fling\'s deltas decay like trackpad momentum); Chromium\'s synthetic touch gestures did not scroll these pages headless. Touch behavior is not measured.',
   '- Not measured: real screen-reader speech (S9 checks focus and aria-posinset in the DOM), touch devices, WebKit/Firefox.',
 );
 fs.mkdirSync(outDir, {recursive: true});

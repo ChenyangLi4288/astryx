@@ -25,13 +25,17 @@ jobs:
     permissions:
       contents: read
     outputs:
-      mode: ${{ steps.plan.outputs.mode }}
+      bakeoff: ${{ steps.plan.outputs.bakeoff }}
+      compare: ${{ steps.plan.outputs.compare }}
       matrix: ${{ steps.plan.outputs.matrix }}
-      sides: ${{ steps.plan.outputs.sides }}
-      scenarios: ${{ steps.plan.outputs.scenarios }}
       runs: ${{ steps.plan.outputs.runs }}
       text: ${{ steps.plan.outputs.text }}
       cases: ${{ steps.plan.outputs.cases }}
+      c_matrix: ${{ steps.plan.outputs.c_matrix }}
+      c_sides: ${{ steps.plan.outputs.c_sides }}
+      c_scenarios: ${{ steps.plan.outputs.c_scenarios }}
+      c_runs: ${{ steps.plan.outputs.c_runs }}
+      c_cases: ${{ steps.plan.outputs.c_cases }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -44,19 +48,23 @@ jobs:
             const fs = require("fs");
             const run = require("./bench/vbench/run.json");
             const out = [];
-            if (run.mode === "compare") {
+            const modes = run.mode === "both" ? ["bakeoff", "compare"] : [run.mode];
+            out.push(`bakeoff=${modes.includes("bakeoff")}`, `compare=${modes.includes("compare")}`);
+            if (modes.includes("compare")) {
               const c = require("./bench/vbench/compare.json");
               if (!/^[0-9a-f]{40}$/.test(c.before) || !/^[0-9a-f]{40}$/.test(c.after)) throw new Error("compare.json needs full before and after SHAs");
               const include = [];
-              for (const side of ["before", "after"]) for (const throttle of c.throttles) for (const text of c.texts) include.push({side, throttle, text, ref: c[side]});
-              out.push("mode=compare", `matrix=${JSON.stringify({include})}`,
-                `sides=${JSON.stringify({include: [{side: "before", ref: c.before}, {side: "after", ref: c.after}]})}`,
-                `scenarios=${c.scenarios}`, `runs=${c.runs}`, "text=100", `cases=${c.cases.join(",")}`);
-            } else {
+              for (const side of ["before", "after"]) for (const throttle of c.throttles) for (const text of c.texts) include.push({side, throttle, text});
+              out.push(`c_matrix=${JSON.stringify({include})}`,
+                `c_sides=${JSON.stringify({include: [{side: "before", ref: c.before}, {side: "after", ref: c.after}]})}`,
+                `c_scenarios=${c.scenarios}`, `c_runs=${c.runs}`, `c_cases=${c.cases.join(",")}`);
+            }
+            if (modes.includes("bakeoff")) {
+              // Every job runs all engines for its scenarios, so engines are
+              // compared on one runner (one CPU model) per scenario.
               const include = [];
-              for (const engine of run.engines) for (const throttle of run.throttles) include.push({engine, throttle});
-              out.push("mode=bakeoff", `matrix=${JSON.stringify({include})}`, `sides=${JSON.stringify({include: [{side: "bench", ref: ""}]})}`,
-                `scenarios=${run.scenarios}`, `runs=${run.runs}`, `text=${run.text}`, "cases=");
+              run.groups.forEach((group, g) => { for (const throttle of run.throttles) include.push({group: g, scenarios: group.join(","), throttle}); });
+              out.push(`matrix=${JSON.stringify({include})}`, `runs=${run.runs}`, `text=${run.text}`, `cases=${run.engines.join(",")}`);
             }
             fs.appendFileSync(process.env.GITHUB_OUTPUT, out.join("\n") + "\n");
           '
@@ -64,7 +72,7 @@ jobs:
   # ---------------------------------------------------------------- bakeoff
   build:
     needs: [plan]
-    if: needs.plan.outputs.mode == 'bakeoff'
+    if: needs.plan.outputs.bakeoff == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -95,9 +103,9 @@ jobs:
 
   measure:
     needs: [plan, build]
-    if: needs.plan.outputs.mode == 'bakeoff'
+    if: needs.plan.outputs.bakeoff == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 150
     permissions:
       contents: read
     strategy:
@@ -118,24 +126,25 @@ jobs:
           path: apps/sandbox/out
       - name: Measure
         env:
-          VBENCH_ENGINES: ${{ matrix.engine }}
+          VBENCH_ENGINES: ${{ needs.plan.outputs.cases }}
           VBENCH_THROTTLE: ${{ matrix.throttle }}
-          VBENCH_SCENARIOS: ${{ needs.plan.outputs.scenarios }}
+          VBENCH_SCENARIOS: ${{ matrix.scenarios }}
           VBENCH_RUNS: ${{ needs.plan.outputs.runs }}
           VBENCH_TEXT: ${{ needs.plan.outputs.text }}
-          VBENCH_RESULTS_DIR: vbench-results/${{ matrix.engine }}-t${{ matrix.throttle }}
+          VBENCH_INTERLEAVE: '1'
+          VBENCH_RESULTS_DIR: vbench-results/g${{ matrix.group }}-t${{ matrix.throttle }}
         run: pnpm exec playwright test --config bench/vbench/playwright.vbench.config.ts
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: vbench-results-${{ matrix.engine }}-t${{ matrix.throttle }}
+          name: vbench-results-g${{ matrix.group }}-t${{ matrix.throttle }}
           path: vbench-results
           retention-days: 30
           if-no-files-found: warn
 
   report:
     needs: [plan, measure]
-    if: always() && needs.plan.outputs.mode == 'bakeoff'
+    if: always() && needs.plan.outputs.bakeoff == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -167,14 +176,14 @@ jobs:
   # ---------------------------------------------------------------- compare
   compare-build:
     needs: [plan]
-    if: needs.plan.outputs.mode == 'compare'
+    if: needs.plan.outputs.compare == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.sides) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.c_sides) }}
     steps:
       - name: Check out the ref under test
         uses: actions/checkout@v7
@@ -205,7 +214,7 @@ jobs:
 
   compare-measure:
     needs: [plan, compare-build]
-    if: needs.plan.outputs.mode == 'compare'
+    if: needs.plan.outputs.compare == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 75
     permissions:
@@ -213,7 +222,7 @@ jobs:
     strategy:
       fail-fast: false
       max-parallel: 10
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.c_matrix) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -232,11 +241,11 @@ jobs:
           VBENCH_SET: components
           VBENCH_ROW_CLOSEST: tr
           VBENCH_SIDE: ${{ matrix.side }}
-          VBENCH_ENGINES: ${{ needs.plan.outputs.cases }}
+          VBENCH_ENGINES: ${{ needs.plan.outputs.c_cases }}
           VBENCH_THROTTLE: ${{ matrix.throttle }}
           VBENCH_TEXT: ${{ matrix.text }}
-          VBENCH_SCENARIOS: ${{ needs.plan.outputs.scenarios }}
-          VBENCH_RUNS: ${{ needs.plan.outputs.runs }}
+          VBENCH_SCENARIOS: ${{ needs.plan.outputs.c_scenarios }}
+          VBENCH_RUNS: ${{ needs.plan.outputs.c_runs }}
           VBENCH_RESULTS_DIR: vbench-results/${{ matrix.side }}-t${{ matrix.throttle }}-x${{ matrix.text }}
         run: pnpm exec playwright test --config bench/vbench/playwright.vbench.config.ts
       - uses: actions/upload-artifact@v7
@@ -249,7 +258,7 @@ jobs:
 
   compare-report:
     needs: [plan, compare-measure]
-    if: always() && needs.plan.outputs.mode == 'compare'
+    if: always() && needs.plan.outputs.compare == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

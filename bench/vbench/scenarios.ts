@@ -13,7 +13,6 @@
 
 import type {CDPSession, Page} from '@playwright/test';
 import {
-  gesture,
   heapMb,
   nextStage,
   setInput,
@@ -41,6 +40,8 @@ export interface ScenarioDef {
   rows: number;
   anchor: 'first-visible' | 'end' | 'item';
   scroller: 'container' | 'page';
+  /** Text scale for this scenario, percent; the run's scale when absent. */
+  text?: number;
   run: (page: Page, cdp: CDPSession) => Promise<ScenarioResult>;
 }
 
@@ -130,8 +131,17 @@ async function flingDown(
   const start = Date.now();
   let flings = 0;
   await setInput(page, true);
+  void cdp;
+  const viewport = page.viewportSize() ?? {width: 800, height: 600};
+  await page.mouse.move(viewport.width / 2, viewport.height / 2);
   while (Date.now() - start < capMs) {
-    await gesture(page, cdp, {distance: 6000, speed: 12000, momentum: true});
+    // A fling as wheel events at 60 Hz whose deltas decay, as a trackpad
+    // fling's momentum does: about 80,000 px over 2 s per fling. Chromium's
+    // synthetic touch gesture does not scroll these pages headless.
+    for (let delta = 2500; delta >= 10; delta *= 0.97) {
+      await page.mouse.wheel(0, Math.round(delta));
+      await page.waitForTimeout(16);
+    }
     flings += 1;
     const atEnd = await page.evaluate(() => {
       const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
@@ -166,7 +176,7 @@ const s1 = (scroller: ScenarioDef['scroller'], id: string) =>
       await page.waitForTimeout(100);
     }
     await startRecording(page, {rects: true});
-    const flings = await flingDown(page, cdp, 30_000);
+    const flings = await flingDown(page, cdp, 60_000);
     await settle(page, 500);
     const scrolled = await page.evaluate(() => {
       const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
@@ -451,8 +461,17 @@ const dragScenario = (rows: number, id: string) =>
   def(id, rows, 'first-visible', 'container', async (page, cdp) => {
     await startRecording(page, {rects: true});
     await setInput(page, true);
+    void cdp;
+    const viewport = page.viewportSize() ?? {width: 800, height: 600};
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    // A drag as steady 20 px wheel steps at 60 Hz with no momentum: ten
+    // drags of 600 px.
     for (let i = 0; i < 10; i++) {
-      await gesture(page, cdp, {distance: 600, speed: 1200, momentum: false});
+      for (let step = 0; step < 30; step++) {
+        await page.mouse.wheel(0, 20);
+        await page.waitForTimeout(16);
+      }
+      await page.waitForTimeout(200);
     }
     await setInput(page, false);
     await settle(page, 500);
@@ -522,6 +541,9 @@ export const SCENARIOS: ScenarioDef[] = [
   s6('item', 'S6-item'),
   s7,
   s9,
+  // Text scaling must not turn windowing off or clip rows.
+  {...s1('container', 'S1-text200'), text: 200},
+  // Page scroll with a list that does not start at the document top.
   s1('page', 'S8-S1-page'),
   s3('page', 'S8-S3-page'),
   s5('page', 'S8-S5-page'),

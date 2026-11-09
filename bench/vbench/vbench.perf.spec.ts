@@ -102,9 +102,36 @@ async function open(page: Page, href: string): Promise<void> {
   );
 }
 
-for (const engine of ENGINES) {
-  for (const scenario of SET.filter(s => SCENARIO_IDS.has(s.id))) {
+// With VBENCH_INTERLEAVE, runs are the outer loop and engines rotate inside
+// each run, so slow drift on the runner spreads over every engine alike.
+const CELLS: Array<{
+  engine: string;
+  scenario: (typeof SET)[number];
+  run: number;
+}> = [];
+const SCENARIO_LIST = SET.filter(s => SCENARIO_IDS.has(s.id));
+if (process.env.VBENCH_INTERLEAVE === '1') {
+  for (const scenario of SCENARIO_LIST) {
     for (let run = 0; run < RUNS; run++) {
+      ENGINES.forEach((_, i) => {
+        const engine = ENGINES[(i + run) % ENGINES.length] ?? ENGINES[0] ?? '';
+        CELLS.push({engine, scenario, run});
+      });
+    }
+  }
+} else {
+  for (const engine of ENGINES) {
+    for (const scenario of SCENARIO_LIST) {
+      for (let run = 0; run < RUNS; run++) {
+        CELLS.push({engine, scenario, run});
+      }
+    }
+  }
+}
+
+for (const {engine, scenario, run} of CELLS) {
+  {
+    {
       test(`${engine} ${scenario.id} run ${run + 1}`, async ({browser}) => {
         test.setTimeout(10 * 60_000);
         const params = {
@@ -112,7 +139,7 @@ for (const engine of ENGINES) {
           n: scenario.rows,
           seed: SEED + run,
           scroller: scenario.scroller,
-          text: TEXT,
+          text: scenario.text ?? TEXT,
           anchor: scenario.anchor,
         };
         const context = await browser.newContext({
@@ -167,7 +194,7 @@ for (const engine of ENGINES) {
           run: run + 1,
           seed: SEED + run,
           throttle: THROTTLE,
-          text: TEXT,
+          text: scenario.text ?? TEXT,
           firstRenderMs,
           error,
           timing: result ? frameStats(result.frames) : null,
