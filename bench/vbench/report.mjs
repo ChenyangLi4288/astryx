@@ -101,6 +101,8 @@ function summarize(list) {
     appendP50: median(list.map(r => r.extra?.appendMsP50)),
     appendP95: median(list.map(r => r.extra?.appendMsP95)),
     domNodes: median(list.map(r => r.extra?.domNodes)),
+    coveragePct: median(list.map(r => r.extra?.coveragePct)),
+    reachedEndCount: list.filter(r => r.extra?.reachedEnd === true).length,
     unsupported: list.find(r => r.unsupported)?.unsupported ?? null,
   };
 }
@@ -197,7 +199,7 @@ for (const th of THROTTLES) {
       const s = get(engine, sc, th);
       if (!s) continue;
       lines.push(
-        `| ${LABELS[engine]} | ${sc} | ${fmt(s.p50)} / ${fmt(s.p95)} / ${fmt(s.p99)} | ${fmt(s.long)} / ${fmt(s.droppedPct, 2)} | ${fmt(s.firstRenderMs, 0)} | ${fmt(s.maxPosPx)} · ${fmt(s.meanPosPx, 2)} | ${fmt(s.offsetPx, 0)} | ${fmt(s.overlapFrames)} / ${fmt(s.gapFrames)} / ${fmt(s.positionFrames)} | ${fmt(s.blankMs, 0)} | ${fmt(s.jumps)} | ${fmt(s.driftPx)} | ${fmt(s.heapMb)} | ${fmt(s.domNodes, 0)} | ${s.appendP50 == null ? '–' : `${fmt(s.appendP50, 2)} / ${fmt(s.appendP95, 2)}`} | ${sc.startsWith('S9') ? `S9 ${s.s9PassCount}/${s.runs}` : sc.startsWith('S11') ? `first paint ${s.firstPaintPassCount}/${s.runs}` : ''}${s.errors ? ` ⚠ ${s.errors} error(s)` : ''} |`,
+        `| ${LABELS[engine]} | ${sc} | ${fmt(s.p50)} / ${fmt(s.p95)} / ${fmt(s.p99)} | ${fmt(s.long)} / ${fmt(s.droppedPct, 2)} | ${fmt(s.firstRenderMs, 0)} | ${fmt(s.maxPosPx)} · ${fmt(s.meanPosPx, 2)} | ${fmt(s.offsetPx, 0)} | ${fmt(s.overlapFrames)} / ${fmt(s.gapFrames)} / ${fmt(s.positionFrames)} | ${fmt(s.blankMs, 0)} | ${fmt(s.jumps)} | ${fmt(s.driftPx)} | ${fmt(s.heapMb)} | ${fmt(s.domNodes, 0)} | ${s.appendP50 == null ? '–' : `${fmt(s.appendP50, 2)} / ${fmt(s.appendP95, 2)}`} | ${sc.startsWith('S9') ? `S9 ${s.s9PassCount}/${s.runs}` : sc.startsWith('S11') ? `first paint ${s.firstPaintPassCount}/${s.runs}` : s.coveragePct != null ? `fling covers ${fmt(s.coveragePct)} %; end reached ${s.reachedEndCount}/${s.runs}` : ''}${s.errors ? ` ⚠ ${s.errors} error(s)` : ''} |`,
       );
     }
   }
@@ -259,7 +261,7 @@ lines.push(
   '- Measured: rAF frame deltas; every frame\'s mounted-row rects against an unwindowed render of the same seeded rows with the same mutations (1 px tolerance; 2 frames of grace after each insert or resize); viewport coverage; anchored-row movement without input; JS heap after S2 (after GC); first load to ready; S9 focus and row identity per frame; min+gzip of each engine alone (React external).',
   "- Candidate 1 is fixed-height by design: it runs every scenario at a fixed 48 px pitch, so its variable-height results are 'not supported', not a comparison.",
   '- Candidate 2 (ChatVirtualizer) renders through its own component; the harness supplies only the row content.',
-  '- S1 flings for 30 s at up to 18,000 px/s (about 10,000 px per fling), so it covers part of the 10k-row list, not all of it; the scrolled distance is in the raw results.',
+  '- S1 (amendment A12): the fling peaks at 18,000 px/s for 30 s, the same for every engine, so it covers part of the 10k-row list; each cell prints the fling\'s list coverage. A jump to the end follows in the same recording, so the far end of the list is checked frame by frame too.',
   '- Rects are read in the frame callback, so a commit that lands after it and before paint is seen one frame late.',
   '- Frame budget: rAF deltas at 60 Hz read 16.7 ms plus timer jitter, so a frame on budget can read 16.8 ms. Amendment A10 sets the bar; the strict reading is shown beside it.',
   '- Flings and drags are wheel events at 60 Hz (a fling\'s deltas decay like trackpad momentum); Chromium\'s synthetic touch gestures did not scroll these pages headless. Touch behavior is not measured.',

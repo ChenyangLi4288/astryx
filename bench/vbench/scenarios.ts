@@ -208,9 +208,31 @@ const s1 = (scroller: ScenarioDef['scroller'], id: string) =>
     await startRecording(page, {rects: true});
     const flings = await flingDown(page, cdp, 30_000);
     await settle(page, 500);
-    const scrolled = await page.evaluate(() => {
+    const {scrolled, extent} = await page.evaluate(() => {
       const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
-      return el ? el.scrollTop : window.scrollY;
+      return el
+        ? {scrolled: el.scrollTop, extent: el.scrollHeight - el.clientHeight}
+        : {
+            scrolled: window.scrollY,
+            extent: document.documentElement.scrollHeight - window.innerHeight,
+          };
+    });
+    const domAfterFling = await domNodes(page);
+    // A12: the fling covers part of the list, so a jump to the end checks
+    // the far end of the list, frame by frame.
+    await setInput(page, true);
+    for (let i = 0; i < 5; i++) {
+      await scrollToFraction(page, 1);
+      await page.waitForTimeout(50);
+    }
+    await setInput(page, false);
+    await settle(page, 1000);
+    const atEnd = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
+      return el
+        ? el.scrollTop + el.clientHeight >= el.scrollHeight - 2
+        : window.scrollY + window.innerHeight >=
+            document.documentElement.scrollHeight - 2;
     });
     return {
       frames: await stopRecording(page),
@@ -218,7 +240,10 @@ const s1 = (scroller: ScenarioDef['scroller'], id: string) =>
       extra: {
         flings,
         scrolledPx: Math.round(scrolled),
-        domNodes: await domNodes(page),
+        coveragePct:
+          extent > 0 ? Math.round((1000 * scrolled) / extent) / 10 : null,
+        reachedEnd: atEnd,
+        domNodes: domAfterFling,
       },
     };
   });
