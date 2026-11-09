@@ -245,6 +245,11 @@ function FenwickList({store, params, scroller}: EngineProps) {
             continue;
           }
           const size = entry.borderBoxSize[0]?.blockSize ?? el.offsetHeight;
+          // A row that left the page reports a zero size; it keeps its last
+          // measured size.
+          if (!el.isConnected || size <= 0) {
+            continue;
+          }
           const delta = model.set(index, size);
           if (delta !== 0 && index < anchor && store.anchorMode !== 'end') {
             correction += delta;

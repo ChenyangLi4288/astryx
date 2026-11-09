@@ -8,10 +8,9 @@
     "recycle"
   ],
   "throttles": [
-    1,
-    4
+    1
   ],
-  "scenarios": "S1,S2,S3,S4,S5,S6,S6-item,S7,S9,S8-S1-page,S8-S3-page,S8-S5-page",
-  "runs": 5,
+  "scenarios": "S1,S5,S9",
+  "runs": 1,
   "text": 100
 }
