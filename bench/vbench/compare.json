@@ -1,7 +1,7 @@
 {
-  "before": "da3dbdc8bd8649827f23adce5ac415f9cdda2858",
-  "after": "be02658701485b7e26848f42ac63af304c2120c5",
-  "label": "(A) #10810 shared windowing engine (Table)",
+  "before": "f6d2c316878690f34602ab07fbeb0039666e653c",
+  "after": "c518793e0e01a84670f6015ba0fcfa18b838a1b0",
+  "label": "(A) #10810 at head c518793e (shared windowing engine, Table) vs main f6d2c316",
   "cases": [
     "table"
   ],
@@ -11,8 +11,7 @@
     4
   ],
   "texts": [
-    100,
-    200
+    100
   ],
   "runs": 3
 }
