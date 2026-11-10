@@ -33,6 +33,8 @@ export interface Frame {
   input: boolean;
   /** Viewport-space top of the anchored row, when one is tracked. */
   anchorTop?: number | null;
+  /** Changes when the script picks a new anchored row. */
+  anchorEpoch?: number;
 }
 
 /** The unwindowed render: row key to content-space top and bottom. */
@@ -383,9 +385,14 @@ export function anchorDrift(
   let sum = 0;
   let count = 0;
   let reference: number | null = null;
+  let epoch: number | undefined;
   for (const frame of frames) {
     const top = frame.anchorTop ?? null;
-    if (frame.input || top == null) {
+    // A new anchored row starts a new reference: the distance between the old
+    // and the new row is not a movement.
+    const newAnchor = frame.anchorEpoch !== epoch;
+    epoch = frame.anchorEpoch;
+    if (frame.input || top == null || newAnchor) {
       reference = top;
       continue;
     }

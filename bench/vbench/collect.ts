@@ -80,6 +80,7 @@ export async function startRecording(
         __vbenchFrames: unknown[];
         __vbenchInput: boolean;
         __vbenchStage: number;
+        __vbenchAnchorEpoch?: number;
         __vbenchStop: boolean;
         __vbench?: {anchorTop?: () => number | null};
       };
@@ -108,6 +109,7 @@ export async function startRecording(
           input: w.__vbenchInput,
           stage: w.__vbenchStage,
           anchorTop: rects ? (w.__vbench?.anchorTop?.() ?? null) : null,
+          anchorEpoch: w.__vbenchAnchorEpoch ?? 0,
         });
         requestAnimationFrame(tick);
       };

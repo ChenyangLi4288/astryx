@@ -166,6 +166,20 @@ describe('anchorDrift', () => {
     expect(drift.jumps).toBe(1);
     expect(drift.maxDriftPx).toBe(30);
   });
+
+  it('starts a new reference when the script picks a new anchored row', () => {
+    const frames: Frame[] = [
+      frame([], {anchorTop: 0, anchorEpoch: 1}),
+      frame([], {anchorTop: 0, anchorEpoch: 1}),
+      frame([], {anchorTop: 300, input: true, anchorEpoch: 1}),
+      frame([], {anchorTop: 12, anchorEpoch: 2}),
+      frame([], {anchorTop: 12, anchorEpoch: 2}),
+      frame([], {anchorTop: 40, anchorEpoch: 2}),
+    ];
+    const drift = anchorDrift(frames);
+    expect(drift.jumps).toBe(1);
+    expect(drift.maxDriftPx).toBe(28);
+  });
 });
 
 describe('frameStats', () => {

@@ -1,5 +1,5 @@
 {
-  "mode": "compare",
+  "mode": "bakeoff",
   "engines": [
     "listwindow",
     "chat",

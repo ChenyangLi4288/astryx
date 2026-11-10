@@ -631,30 +631,30 @@ const a4 = def('A4', 10_000, 'first-visible', 'container', async page => {
   await settle(page, 300);
   await startRecording(page, {rects: true});
   for (let i = 0; i < 40; i++) {
-    // An instant 300 px scroll up. A wheel event animates the scroll for
-    // 100–200 ms after the input, and that animation is not a jump.
-    await setInput(page, true);
-    await page.evaluate(() => {
-      const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
-      (el ?? window).scrollBy({top: -300, behavior: 'instant'});
-    });
+    // An instant 300 px scroll up (a wheel event animates the scroll after
+    // the input). In the next frame the first visible row becomes the anchor
+    // and input ends, in one step: from then on, the row must hold still
+    // while the engine measures the rows it just showed.
     await page.evaluate(
       () =>
-        new Promise<void>(resolve =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        ),
-    );
-    await setInput(page, false);
-    // The row at the top must hold still while the engine measures the rows
-    // it just showed; a move here is a jump.
-    const key = await api(page, a => a.firstVisibleKey());
-    await page.evaluate(
-      k =>
-        (window as unknown as {__vbench: Api}).__vbench.setAnchor(
-          'first-visible',
-          k,
-        ),
-      key,
+        new Promise<void>(resolve => {
+          const w = window as unknown as {
+            __vbench: Api;
+            __vbenchInput: boolean;
+            __vbenchAnchorEpoch?: number;
+          };
+          w.__vbenchInput = true;
+          const el = document.querySelector<HTMLElement>(
+            '[data-vbench-scroller]',
+          );
+          (el ?? window).scrollBy({top: -300, behavior: 'instant'});
+          requestAnimationFrame(() => {
+            w.__vbench.setAnchor('first-visible', w.__vbench.firstVisibleKey());
+            w.__vbenchAnchorEpoch = (w.__vbenchAnchorEpoch ?? 0) + 1;
+            w.__vbenchInput = false;
+            resolve();
+          });
+        }),
     );
     await settle(page, 120);
   }
