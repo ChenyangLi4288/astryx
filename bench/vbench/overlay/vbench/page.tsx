@@ -91,8 +91,6 @@ function TableCase({rows, windowed}: {rows: Row[]; windowed: boolean}) {
         key: 'name',
         header: 'Product',
         // No renderCell: a custom cell renderer turns Table windowing off.
-        // Wrapping text lets one row grow (C-resize).
-        textOverflow: 'wrap',
       },
       {key: 'status', header: 'Status'},
       {key: 'amount', header: 'Amount'},
@@ -105,6 +103,10 @@ function TableCase({rows, windowed}: {rows: Row[]; windowed: boolean}) {
       columns={columns as never}
       idKey="id"
       {...(windowed ? {virtualization} : null)}
+      // Both trees render cells the same way: Table defaults to wrap without
+      // virtualization and to truncate with it, which would make the
+      // unwindowed truth's rows taller than the windowed rows.
+      textOverflow="truncate"
       dividers="grid"
     />
   );
@@ -188,14 +190,18 @@ export default function VbenchComponentsPage() {
         anchorMode = mode;
         anchorKey = key;
       },
+      /** The row crossing the viewport top (A14), else the first row below it. */
       firstVisibleKey: () => {
         const top = viewportTop();
         let best: {key: string; top: number} | null = null;
         for (const keyed of document.querySelectorAll<HTMLElement>(
           '[data-vbench-key]',
         )) {
-          const row = keyed.closest('tr') ?? keyed;
-          const t = row.getBoundingClientRect().top - top;
+          const rect = (keyed.closest('tr') ?? keyed).getBoundingClientRect();
+          const t = rect.top - top;
+          if (t <= 0.5 && rect.bottom - top > 0.5) {
+            return keyed.dataset.vbenchKey ?? null;
+          }
           if (t >= -0.5 && (best == null || t < best.top)) {
             best = {key: keyed.dataset.vbenchKey ?? '', top: t};
           }

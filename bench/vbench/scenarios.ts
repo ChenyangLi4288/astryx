@@ -361,17 +361,25 @@ const s6 = (mode: 'first-visible' | 'item', id: string) =>
       const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
       const top = el?.getBoundingClientRect().top ?? 0;
       const height = el?.clientHeight ?? window.innerHeight;
-      const rows = [
+      const all = [
         ...document.querySelectorAll<HTMLElement>('[data-vbench-key]'),
       ]
         .filter(r => r.style.display !== 'none')
-        .map(r => ({
-          key: r.dataset.vbenchKey ?? '',
-          top: r.getBoundingClientRect().top - top,
-        }))
-        .filter(r => r.top >= 0 && r.top < height)
+        .map(r => {
+          const rect = r.getBoundingClientRect();
+          return {
+            key: r.dataset.vbenchKey ?? '',
+            top: rect.top - top,
+            bottom: rect.bottom - top,
+          };
+        })
         .sort((a, b) => a.top - b.top);
-      const first = rows[0]?.key ?? null;
+      const rows = all.filter(r => r.top >= 0 && r.top < height);
+      // A14: first-visible is the row crossing the viewport top.
+      const first =
+        all.find(r => r.top <= 0.5 && r.bottom > 0.5)?.key ??
+        rows[0]?.key ??
+        null;
       const mid = rows[Math.floor(rows.length / 2)]?.key ?? null;
       const after = rows[Math.floor(rows.length / 2) + 1]?.key ?? null;
       return {first, mid, after, anchor: mode === 'item' ? after : first};

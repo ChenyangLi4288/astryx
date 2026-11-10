@@ -65,6 +65,9 @@ function readRowsSource(contract: ListContract): string {
 /**
  * Starts recording one record per animation frame. With `rects`, every frame
  * also reads the mounted rows; without it, only timing is recorded.
+ * Protocol A14: the primary record reads the painted state, in a
+ * ResizeObserver callback after the engines' own observers and before paint;
+ * the rAF read (before that frame's layout) is kept as a secondary reading.
  */
 export async function startRecording(
   page: Page,
@@ -78,10 +81,12 @@ export async function startRecording(
     ({read, rects}) => {
       const w = window as unknown as {
         __vbenchFrames: unknown[];
+        __vbenchFramesRaf: unknown[];
         __vbenchInput: boolean;
         __vbenchStage: number;
         __vbenchAnchorEpoch?: number;
         __vbenchStop: boolean;
+        __vbenchProbe?: {observer: ResizeObserver; el: HTMLElement};
         __vbench?: {anchorTop?: () => number | null};
       };
 
@@ -91,26 +96,65 @@ export async function startRecording(
         rows: unknown[];
       };
       w.__vbenchFrames = [];
+      w.__vbenchFramesRaf = [];
       w.__vbenchInput = false;
       w.__vbenchStage = w.__vbenchStage ?? 0;
       w.__vbenchStop = false;
-      const tick = (t: number) => {
-        if (w.__vbenchStop) {
-          return;
-        }
+      const record = (t: number, flags: {input: boolean; stage: number; epoch: number}) => {
         const geometry = rects
           ? readRows()
           : {scroll: 0, viewport: 0, rows: []};
-        w.__vbenchFrames.push({
+        return {
           t,
           scroll: geometry.scroll,
           viewport: geometry.viewport,
           rows: geometry.rows,
+          input: flags.input,
+          stage: flags.stage,
+          anchorTop: rects ? (w.__vbench?.anchorTop?.() ?? null) : null,
+          anchorEpoch: flags.epoch,
+        };
+      };
+      // A 1 px probe that changes size every frame: its observer is created
+      // after the engines' observers, so its callback runs after theirs (and
+      // after their microtasks), in the same frame, before paint.
+      w.__vbenchProbe?.observer.disconnect();
+      w.__vbenchProbe?.el.remove();
+      const el = document.createElement('div');
+      el.style.cssText =
+        'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;visibility:hidden';
+      document.body.appendChild(el);
+      let pending: {t: number; input: boolean; stage: number; epoch: number} | null = null;
+      const observer = new ResizeObserver(() => {
+        if (pending == null || w.__vbenchStop) {
+          return;
+        }
+        w.__vbenchFrames.push(record(pending.t, pending));
+        pending = null;
+      });
+      observer.observe(el);
+      w.__vbenchProbe = {observer, el};
+      let wide = false;
+      const tick = (t: number) => {
+        if (w.__vbenchStop) {
+          observer.disconnect();
+          el.remove();
+          return;
+        }
+        // A frame whose probe callback did not run (no layout) keeps its rAF
+        // read as the painted state.
+        if (pending != null) {
+          w.__vbenchFrames.push(record(pending.t, pending));
+        }
+        const flags = {
           input: w.__vbenchInput,
           stage: w.__vbenchStage,
-          anchorTop: rects ? (w.__vbench?.anchorTop?.() ?? null) : null,
-          anchorEpoch: w.__vbenchAnchorEpoch ?? 0,
-        });
+          epoch: w.__vbenchAnchorEpoch ?? 0,
+        };
+        w.__vbenchFramesRaf.push(record(t, flags));
+        pending = {t, ...flags};
+        wide = !wide;
+        el.style.width = wide ? '2px' : '1px';
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -121,6 +165,15 @@ export async function startRecording(
 
 export interface RecordedFrame extends Frame {
   stage: number;
+}
+
+/** The secondary rAF reading of the last recording (A14). */
+export async function rafFrames(page: Page): Promise<RecordedFrame[] | null> {
+  return page.evaluate(
+    () =>
+      ((window as unknown as {__vbenchFramesRaf?: unknown[]})
+        .__vbenchFramesRaf ?? null) as never,
+  );
 }
 
 export async function stopRecording(page: Page): Promise<RecordedFrame[]> {

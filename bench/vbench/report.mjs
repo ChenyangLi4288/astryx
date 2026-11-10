@@ -104,6 +104,10 @@ function summarize(list) {
     coveragePct: median(list.map(r => r.extra?.coveragePct)),
     reachedEndCount: list.filter(r => r.extra?.reachedEnd === true).length,
     unsupported: list.find(r => r.unsupported)?.unsupported ?? null,
+    // A14 secondary reading: frames sampled in rAF, before layout.
+    rafJumps: median(list.map(r => r.correctnessRaf?.jumps)),
+    rafDrift: median(list.map(r => r.correctnessRaf?.maxDriftPx)),
+    rafMisplaced: median(list.map(r => r.correctnessRaf?.positionFrames)),
   };
 }
 
@@ -126,14 +130,16 @@ function verdicts(engine, frameBar) {
       // P1: p95, p99 <= 33 ms, dropped frames <= 1 %. The p95 bar is 16.7 ms
       // as first written (strict), or within 0.5 ms of the 60 Hz vsync
       // interval under amendment A10.
-      const p95Bar = frameBar === 'strict' ? 16.7 : 1000 / 60 + 0.5;
+      // A13 (3): 16.8 ms is rAF quantization at 60 Hz and passes the strict
+      // reading.
+      const p95Bar = frameBar === 'strict' ? 16.8 : 1000 / 60 + 0.5;
       if (s.p95 == null || s.p95 > p95Bar) why.push(`${sc} p95 ${fmt(s.p95)} ms > ${fmt(p95Bar, 2)}`);
       if (s.p99 == null || s.p99 > 33) why.push(`${sc} p99 ${fmt(s.p99)} ms > 33`);
       if (s.droppedPct == null || s.droppedPct > 1) why.push(`${sc} dropped ${fmt(s.droppedPct, 2)} % > 1`);
     }
   }
   // Anchored-row drift and unprompted jumps in S3–S7, in both scroll areas.
-  for (const base of ['S3', 'S4', 'S5', 'S6', 'S6-item', 'S7']) {
+  for (const base of ['S3', 'S4', 'S5', 'S6', 'S6-item', 'S7', 'S12']) {
     for (const sc of [base, pageId(base)]) {
       for (const th of THROTTLES) {
         const s = get(engine, sc, th);
@@ -206,15 +212,15 @@ lines.push(
 for (const th of THROTTLES) {
   lines.push(`## ${th === 1 ? 'Unthrottled' : `${th}× CPU throttle`}`, '');
   lines.push(
-    '| Candidate | Scenario | p50 / p95 / p99 ms | long / dropped % | first load ms | max · mean pos err px (vs first visible row) | content offset px | overlap / gap / misplaced frames | blank ms | jumps | drift px | heap MB | DOM nodes | append p50 / p95 ms | S9 / S11 |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+    '| Candidate | Scenario | p50 / p95 / p99 ms | long / dropped % | first load ms | max · mean pos err px (vs first visible row) | content offset px | overlap / gap / misplaced frames | blank ms | jumps | drift px | heap MB | DOM nodes | append p50 / p95 ms | S9 / S11 | rAF reading (A14): jumps / drift / misplaced |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   );
   for (const engine of ENGINES) {
     for (const sc of SCENARIOS) {
       const s = get(engine, sc, th);
       if (!s) continue;
       lines.push(
-        `| ${LABELS[engine]} | ${sc} | ${fmt(s.p50)} / ${fmt(s.p95)} / ${fmt(s.p99)} | ${fmt(s.long)} / ${fmt(s.droppedPct, 2)} | ${fmt(s.firstRenderMs, 0)} | ${fmt(s.maxPosPx)} · ${fmt(s.meanPosPx, 2)} | ${fmt(s.offsetPx, 0)} | ${fmt(s.overlapFrames)} / ${fmt(s.gapFrames)} / ${fmt(s.positionFrames)} | ${fmt(s.blankMs, 0)} | ${fmt(s.jumps)} | ${fmt(s.driftPx)} | ${fmt(s.heapMb)} | ${fmt(s.domNodes, 0)} | ${s.appendP50 == null ? '–' : `${fmt(s.appendP50, 2)} / ${fmt(s.appendP95, 2)}`} | ${sc.startsWith('S9') ? `S9 ${s.s9PassCount}/${s.runs}` : sc.startsWith('S11') ? `first paint ${s.firstPaintPassCount}/${s.runs}` : s.coveragePct != null ? `fling covers ${fmt(s.coveragePct)} %; end reached ${s.reachedEndCount}/${s.runs}` : ''}${s.errors ? ` ⚠ ${s.errors} error(s)` : ''} |`,
+        `| ${LABELS[engine]} | ${sc} | ${fmt(s.p50)} / ${fmt(s.p95)} / ${fmt(s.p99)} | ${fmt(s.long)} / ${fmt(s.droppedPct, 2)} | ${fmt(s.firstRenderMs, 0)} | ${fmt(s.maxPosPx)} · ${fmt(s.meanPosPx, 2)} | ${fmt(s.offsetPx, 0)} | ${fmt(s.overlapFrames)} / ${fmt(s.gapFrames)} / ${fmt(s.positionFrames)} | ${fmt(s.blankMs, 0)} | ${fmt(s.jumps)} | ${fmt(s.driftPx)} | ${fmt(s.heapMb)} | ${fmt(s.domNodes, 0)} | ${s.appendP50 == null ? '–' : `${fmt(s.appendP50, 2)} / ${fmt(s.appendP95, 2)}`} | ${sc.startsWith('S9') ? `S9 ${s.s9PassCount}/${s.runs}` : sc.startsWith('S11') ? `first paint ${s.firstPaintPassCount}/${s.runs}` : s.coveragePct != null ? `fling covers ${fmt(s.coveragePct)} %; end reached ${s.reachedEndCount}/${s.runs}` : ''}${s.errors ? ` ⚠ ${s.errors} error(s)` : ''} | ${s.rafJumps == null ? '–' : `${fmt(s.rafJumps)} / ${fmt(s.rafDrift)} / ${fmt(s.rafMisplaced)}`} |`,
       );
     }
   }
@@ -260,6 +266,10 @@ lines.push(
   '',
 );
 lines.push('## Harness caveats', '');
+lines.push(
+  '- Amendment A14 (accepted after the first full run, applied to every engine): each frame is sampled in its painted state, in a ResizeObserver callback after the engines\' own observers and before paint. The earlier rAF sample read a state some engines never paint (they correct in their ResizeObserver step). The rAF reading stays beside every row as a disclosed secondary reading. "First-visible" anchoring tracks the row crossing the viewport top, the row the engines hold.',
+  '- Amendment A13: every adapter anchors through its engine\'s own API; P1 frame bars are judged unthrottled only (4× and 6× are recorded); S2\'s 16.8 ms p95 passes the strict reading.',
+);
 lines.push(
   '- A4 (scroll up into unmeasured rows) uses 40 instant 300 px scroll steps; after each step the first visible row becomes the anchor, and it must hold still while the engine measures the rows it just showed. Two earlier A4 passes are discarded: one counted Chromium\'s wheel animation as jumps, and one compared the old anchored row with the new one (the drift reference now restarts with each new anchor; unit-tested). A4 runs at 1× and 4× CPU (the protocol\'s pre-registered throttles), not 6×.',
   '- S1-text200 for candidate 1: fixed 48 px rows clip their text at 200%, so its blank time there comes from rows that cannot grow.',

@@ -5,7 +5,7 @@
   "cases": [
     "table"
   ],
-  "scenarios": "C-fling-10k,C-resize,C-width",
+  "scenarios": "C-fling-10k,C-width",
   "throttles": [
     1,
     4
@@ -16,7 +16,7 @@
   ],
   "runs": 3,
   "skip": [
-    "C-resize|100",
     "C-width|100"
-  ]
+  ],
+  "note": "One row growing is not applicable to Table: a windowed Table renders single-line, truncated cells (useTableRowsVirtualization FR14)."
 }

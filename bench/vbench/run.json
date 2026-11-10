@@ -1,24 +1,24 @@
 {
   "mode": "bakeoff",
   "engines": [
-    "chat"
+    "listwindow",
+    "chat",
+    "tanstack",
+    "fenwick",
+    "recycle"
   ],
   "throttles": [
-    1,
-    4
+    1
   ],
   "groups": [
     [
-      "S4-page",
       "S6",
       "S6-item",
-      "S6-page",
-      "S6-item-page",
       "S12",
-      "S12-page",
-      "S7-page"
+      "S4-page",
+      "A4"
     ]
   ],
-  "runs": 3,
+  "runs": 1,
   "text": 100
 }

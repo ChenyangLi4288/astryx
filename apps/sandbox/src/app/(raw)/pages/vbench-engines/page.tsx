@@ -767,7 +767,7 @@ function installControls(
         benchHandles.chat.anchorToKey(key, offset);
       }
     },
-    /** The first row whose top is at or below the viewport's top. */
+    /** The row crossing the viewport top (A14), else the first row below it. */
     firstVisibleKey: () => {
       const top = viewportTop();
       let best: {key: string; top: number} | null = null;
@@ -777,7 +777,11 @@ function installControls(
         if (el.offsetParent == null && el.style.display === 'none') {
           continue;
         }
-        const t = el.getBoundingClientRect().top - top;
+        const rect = el.getBoundingClientRect();
+        const t = rect.top - top;
+        if (t <= 0.5 && rect.bottom - top > 0.5) {
+          return el.dataset.vbenchKey ?? null;
+        }
         if (t >= -0.5 && (best == null || t < best.top)) {
           best = {key: el.dataset.vbenchKey ?? '', top: t};
         }

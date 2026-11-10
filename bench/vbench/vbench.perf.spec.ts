@@ -23,7 +23,7 @@ import {
   type StaticServer,
 } from '../../internal/a11y-spec/src/storybook';
 import {checkFrames, frameStats, median, stagedTruth} from './analyze';
-import {readGroundTruth} from './collect';
+import {rafFrames, readGroundTruth} from './collect';
 import {COMPONENT_SCENARIOS, SCENARIOS, replayStages} from './scenarios';
 
 const PAGE = process.env.VBENCH_PAGE ?? 'vbench-engines';
@@ -253,6 +253,11 @@ for (const {engine, scenario, run} of CELLS) {
             });
           }
           result = await scenario.run(page, cdp);
+          // A14: the rAF reading, kept beside the painted one.
+          const raf = await rafFrames(page);
+          if (raf && raf.length > 0) {
+            (result as {rafFrames?: typeof raf}).rafFrames = raf;
+          }
           // P6: rows in the DOM at the end, to tell windowed from full render.
           result.extra = {
             ...result.extra,
@@ -266,6 +271,7 @@ for (const {engine, scenario, run} of CELLS) {
         await context.close();
 
         let report = null;
+        let rafReport: unknown = null;
         if (result) {
           // Ground truth: the same rows unwindowed, with the same mutations.
           const truthContext = await browser.newContext({
@@ -287,6 +293,11 @@ for (const {engine, scenario, run} of CELLS) {
             violations: correctness.violations.slice(0, 50),
             violationCount: correctness.violations.length,
           };
+          const raf = (result as {rafFrames?: typeof result.frames}).rafFrames;
+          if (raf) {
+            const rafCheck = checkFrames(raf, stagedTruth(raf, truths));
+            rafReport = {...rafCheck, violations: undefined, violationCount: rafCheck.violations.length};
+          }
         }
         const out = {
           engine,
@@ -300,6 +311,7 @@ for (const {engine, scenario, run} of CELLS) {
           error,
           timing: result ? frameStats(result.frames) : null,
           correctness: report,
+          correctnessRaf: rafReport,
           extra: firstPaint
             ? {...result?.extra, firstPaint}
             : (result?.extra ?? null),
