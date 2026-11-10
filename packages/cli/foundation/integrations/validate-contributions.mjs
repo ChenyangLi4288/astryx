@@ -2448,3 +2448,201 @@ async function allLoadedIntegrationIssues(loaded) {
   await runContributionChecks(loaded, issues);
   return issues;
 }
+
+/**
+ * Where the package declares the logo a catalog shows, and the field that
+ * holds it for messages. The one place that reads it, so another source can
+ * be added here.
+ * @param {any} pkg parsed package.json
+ * @returns {{field: string, light: unknown, dark: unknown}}
+ */
+function listingLogo(pkg) {
+  const logo = pkg?.marketplace?.logo;
+  const value = logo && typeof logo === 'object' ? logo : {};
+  return {field: 'marketplace.logo', light: value.light, dark: value.dark};
+}
+
+/** The largest logo a catalog shows, in bytes. */
+const LOGO_MAX_BYTES = 512 * 1024;
+
+/**
+ * Whether these bytes are an image a catalog can show as a logo: PNG, JPEG,
+ * WebP, or an SVG drawn only with shapes (no script, style, link, embedded
+ * document, event handler or outside reference).
+ * @param {Buffer} bytes
+ * @returns {boolean}
+ */
+export function isListingImage(bytes) {
+  if (bytes.length === 0 || bytes.length > LOGO_MAX_BYTES) return false;
+  const png = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (png.every((byte, index) => bytes[index] === byte)) return true;
+  if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return true;
+  if (
+    bytes.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    bytes.subarray(8, 12).toString('latin1') === 'WEBP'
+  ) {
+    return true;
+  }
+  const source = bytes.toString('utf8').trim();
+  if (!source.startsWith('<svg') || !source.endsWith('</svg>')) return false;
+  const withoutNamespaces = source.replace(
+    /\sxmlns(?::[\w-]+)?\s*=\s*(["'])[^"']*\1/giu,
+    '',
+  );
+  return !/<(?:script|foreignObject|iframe|object|embed|link|style)\b|\son[a-z]+\s*=|\b(?:href|src)\s*=|url\s*\(|@import|(?:https?:|ftp:|data:|\/\/)/iu.test(
+    withoutNamespaces,
+  );
+}
+
+/**
+ * What a catalog needs to list the package well, as two `next` notes
+ * (architecture:cli-surface INV35), each with its fix:
+ * - `package_without_logo`: package.json `marketplace.logo.light` names no
+ *   image the package ships: missing, outside the package, not a file, not a
+ *   PNG, JPEG, WebP or shapes-only SVG of at most 512 KB, or left out of the
+ *   packed files. `marketplace.logo.dark`, when set, is checked the same way.
+ * - `package_without_example`: the package contributes components but no
+ *   block template is an example (`isShowcase: true` with `exampleFor`, or
+ *   `alsoShowcaseFor`). A package of themes, docs, codemods or agent docs
+ *   alone needs none: a catalog shows a theme from the theme itself. The
+ *   components `component_without_example` exempts are not counted.
+ * When npm cannot say whether a logo is packed, it is returned in `unchecked`,
+ * listed with the template assets npm could not place.
+ * @param {LoadedIntegration} integration
+ * @returns {Promise<{notes: Note[], unchecked: Array<{file: string, asset: string, reason: string}>}>}
+ */
+export async function packageListingCheck(integration) {
+  /** @type {Note[]} */
+  const notes = [];
+  /** @type {Array<{file: string, asset: string, reason: string}>} */
+  const unchecked = [];
+  const base = integration.__packageDir;
+  if (!base) return {notes, unchecked};
+  /** @type {any} */
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(base, 'package.json'), 'utf8'));
+  } catch {
+    // package.json problems are reported by their own check.
+    return {notes, unchecked};
+  }
+  // A package of icon sets alone is experimental; listing it is not.
+  const stableRoots = [
+    'components',
+    'templates',
+    'themes',
+    'docs',
+    'codemods',
+    'agentDocs',
+  ];
+  if (!stableRoots.some(key => /** @type {any} */ (integration)[key])) {
+    return {notes, unchecked};
+  }
+  const logo = listingLogo(pkg);
+  const fix =
+    'Fix: add a square logo inside the package, such as `marketplace/logo.svg` (an SVG drawn only with shapes, or a PNG, JPEG or WebP, at most 512 KB), make sure `files` packs it, and set `"marketplace": {"logo": {"light": "marketplace/logo.svg"}}` in package.json; add `"dark"` for a version drawn for dark backgrounds.';
+  /** @type {{paths: Set<string>} | {error: string} | undefined} */
+  let packed;
+  /**
+   * Why the image at `value` cannot be shown, or null when it can, or
+   * 'unchecked' when only npm could tell.
+   * @param {unknown} value
+   * @param {string} field
+   * @returns {string | null}
+   */
+  const problem = (value, field) => {
+    if (typeof value !== 'string' || value.trim() === '') {
+      return `package.json \`${field}\` is ${value === undefined ? 'not set' : 'not a path'}`;
+    }
+    const rel = slash(path.normalize(value.trim())).replace(/^\.\//u, '');
+    if (path.isAbsolute(value) || rel === '..' || rel.startsWith('../')) {
+      return `package.json \`${field}\` "${value}" points outside the package`;
+    }
+    const file = path.join(base, rel);
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
+      return `package.json \`${field}\` names ${rel}, which does not exist`;
+    }
+    if (!isListingImage(fs.readFileSync(file))) {
+      return `package.json \`${field}\` names ${rel}, which is not a PNG, JPEG, WebP or shapes-only SVG of at most 512 KB`;
+    }
+    const files = pkg.files;
+    if (!Array.isArray(files) && ignoreFilesFor(base, rel).length === 0) {
+      return null;
+    }
+    packed ??= npmPackedPaths(base);
+    if ('paths' in packed) {
+      return packed.paths.has(rel)
+        ? null
+        : `package.json \`${field}\` names ${rel}, which npm leaves out of the package`;
+    }
+    if (Array.isArray(files) && outsideFiles(rel, files)) {
+      return `package.json \`${field}\` names ${rel}, which no \`files\` entry packs`;
+    }
+    unchecked.push({file: 'package.json', asset: rel, reason: packed.error});
+    return null;
+  };
+  const light = problem(logo.light, `${logo.field}.light`);
+  if (light != null) {
+    notes.push({
+      code: 'package_without_logo',
+      message: `${light}, so a catalog that lists this package shows no logo beside its name. ${fix}`,
+    });
+  } else if (logo.dark !== undefined) {
+    const dark = problem(logo.dark, `${logo.field}.dark`);
+    if (dark != null) {
+      notes.push({
+        code: 'package_without_logo',
+        message: `${dark}, so on a dark background a catalog shows no logo for this package. Fix: point \`marketplace.logo.dark\` at a packed image, or remove it to use the light logo everywhere.`,
+      });
+    }
+  }
+  if (!integration.components || rootProblem(integration.components)) {
+    return {notes, unchecked};
+  }
+  /** @type {any[]} */
+  let records;
+  try {
+    records = componentDiscovery.discoverIntegrationComponents(integration);
+  } catch {
+    return {notes, unchecked};
+  }
+  /** @type {any[]} */
+  let templates = [];
+  const root = integration.templates;
+  if (root && !rootProblem(root)) {
+    try {
+      ({templates} = await discoverIntegrationTemplatesForOne(integration));
+    } catch {
+      // Templates that cannot be read are reported by the template check.
+      return {notes, unchecked};
+    }
+  }
+  const hasExample = templates.some(
+    template =>
+      template.type === 'block' &&
+      ((typeof template.exampleFor === 'string' && template.isShowcase) ||
+        (Array.isArray(template.alsoShowcaseFor) &&
+          template.alsoShowcaseFor.length > 0)),
+  );
+  if (hasExample) return {notes, unchecked};
+  let needsExample = 0;
+  for (const record of records) {
+    if (componentDiscovery.isIntegrationMember(record)) continue;
+    let doc;
+    try {
+      doc = await loadComponentDoc(record.docPath);
+    } catch {
+      continue;
+    }
+    if (doc?.hidden === true || doc?.isHiddenFromOverview === true) continue;
+    if (doc?.category === 'Utility') continue;
+    needsExample++;
+  }
+  if (needsExample > 0) {
+    notes.push({
+      code: 'package_without_example',
+      message: `The package contributes ${needsExample} component${needsExample === 1 ? '' : 's'} but no example block, so a catalog that lists it has nothing to preview. Fix: add a block template that renders one of them, with \`exampleFor: '<Component>'\` and \`isShowcase: true\` in its .doc.mjs; each \`component_without_example\` note gives the files to add.`,
+    });
+  }
+  return {notes, unchecked};
+}

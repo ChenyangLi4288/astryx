@@ -73,6 +73,7 @@ import {
 import {
   blockComponentsCheck,
   componentExamplesCheck,
+  packageListingCheck,
   componentDocNamesCheck,
   INVALID_CLI_COMMAND,
   isListedIssue,
@@ -884,6 +885,11 @@ export async function validateIntegration(pkg, options = {}) {
   const examples = integration
     ? await componentExamplesCheck(integration)
     : undefined;
+  // What a catalog needs to list the package: a logo, and an example of
+  // its components.
+  const listing = integration
+    ? await packageListingCheck(integration)
+    : undefined;
   const docNames = names?.[0].report;
   const blockComponents = names?.[1].report;
   // Notes fail nothing: a malformed `cliCommand`, and the findings added
@@ -908,6 +914,7 @@ export async function validateIntegration(pkg, options = {}) {
           each.notes.map(note => ({...note, next: true})),
         ),
         ...(examples?.notes ?? []).map(note => ({...note, next: true})),
+        ...(listing?.notes ?? []).map(note => ({...note, next: true})),
       ]
     : [];
   // The doc-syntax findings in the package's topics, as `next` notes with
@@ -921,6 +928,10 @@ export async function validateIntegration(pkg, options = {}) {
       })),
     );
   }
+  const assetsUnchecked = [
+    ...(examples?.unchecked ?? []),
+    ...(listing?.unchecked ?? []),
+  ];
   return {
     type: 'integration.validate',
     data: {
@@ -950,13 +961,13 @@ export async function validateIntegration(pkg, options = {}) {
       ...(result.found && result.olderCliNotes
         ? {olderCliNotes: result.olderCliNotes}
         : {}),
-      // Template assets npm could not place, when there are any.
-      ...(examples && examples.unchecked.length > 0
+      // Template assets and logos npm could not place, when there are any.
+      ...(assetsUnchecked.length > 0
         ? {
             exampleAssets: {
               status: 'checked',
               findings: [],
-              unchecked: examples.unchecked,
+              unchecked: assetsUnchecked,
             },
           }
         : {}),
