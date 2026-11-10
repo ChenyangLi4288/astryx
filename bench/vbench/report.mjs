@@ -261,7 +261,7 @@ lines.push(
 );
 lines.push('## Harness caveats', '');
 lines.push(
-  '- A4 (scroll up into unmeasured rows) uses instant 300 px scroll steps. A first pass with wheel steps counted Chromium\'s 100–200 ms wheel animation as jumps for every engine, including candidate 1, whose rows never change size; that pass is discarded. A4 runs at 1× and 4× CPU (the protocol\'s pre-registered throttles), not 6×.',
+  '- A4 (scroll up into unmeasured rows) uses 40 instant 300 px scroll steps; after each step the first visible row becomes the anchor, and it must hold still while the engine measures the rows it just showed. Two earlier A4 passes are discarded: one counted Chromium\'s wheel animation as jumps, and one compared the old anchored row with the new one (the drift reference now restarts with each new anchor; unit-tested). A4 runs at 1× and 4× CPU (the protocol\'s pre-registered throttles), not 6×.',
   '- S1-text200 for candidate 1: fixed 48 px rows clip their text at 200%, so its blank time there comes from rows that cannot grow.',
   '',
 );
