@@ -751,6 +751,21 @@ function installControls(
     setAnchor: (mode: AnchorMode, key: string | null = null) => {
       store.anchorMode = mode;
       store.anchorKey = key;
+      // ChatVirtualizer keeps its own anchor: hold an item through its own
+      // API, as every other adapter honours the harness anchor. With
+      // first-visible it already holds the row at the viewport top.
+      if (
+        params.engine === 'chat' &&
+        benchHandles.chat &&
+        mode === 'item' &&
+        key
+      ) {
+        const row = rowElement(key);
+        const offset = row
+          ? row.getBoundingClientRect().top - viewportTop()
+          : 0;
+        benchHandles.chat.anchorToKey(key, offset);
+      }
     },
     /** The first row whose top is at or below the viewport's top. */
     firstVisibleKey: () => {
