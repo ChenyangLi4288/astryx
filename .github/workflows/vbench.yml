@@ -228,7 +228,7 @@ jobs:
     needs: [plan, compare-build]
     if: needs.plan.outputs.compare == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 75
     permissions:
       contents: read
     strategy:
@@ -251,7 +251,10 @@ jobs:
         with:
           name: vbench-sandbox-after
           path: vbench-out-after
-      - name: Measure before, then after, on this runner
+      - name: Measure after, then before, on this runner
+        # Under the job timeout, so the results upload even when a slow side
+        # (a full render of every row) runs out of time.
+        timeout-minutes: 68
         env:
           VBENCH_PAGE: vbench
           VBENCH_SET: components
@@ -263,7 +266,7 @@ jobs:
           VBENCH_SKIP: ${{ needs.plan.outputs.c_skip }}
         run: |
           status=0
-          for side in before after; do
+          for side in after before; do
             VBENCH_SIDE=$side VBENCH_SITE=vbench-out-$side \
               VBENCH_RESULTS_DIR=vbench-results/$side-t${{ matrix.throttle }}-x${{ matrix.text }} \
               pnpm exec playwright test --config bench/vbench/playwright.vbench.config.ts || status=1
