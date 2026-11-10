@@ -1,5 +1,5 @@
 {
-  "mode": "both",
+  "mode": "compare",
   "engines": [
     "listwindow",
     "chat",
