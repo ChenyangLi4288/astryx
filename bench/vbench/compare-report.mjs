@@ -77,7 +77,19 @@ const keys = [...new Set(runs.map(r => `${r.engine}|${r.scenario}|${r.throttle}|
 const lines = [`# Engine-swap compare${config.label ? `: ${config.label}` : ''}`, ''];
 lines.push(`Before \`${config.before.slice(0, 10)}\` · after \`${config.after.slice(0, 10)}\`. Medians of ${config.runs} seeded runs per cell.`);
 const cpus = [...new Set(runners.map(r => r.cpu))];
-lines.push(`Runner CPU model(s): ${cpus.join(' | ') || 'unknown'}${cpus.length > 1 ? ' — **more than one; timing deltas compare different CPUs**' : ''}.`, '');
+// Each throttle × text job runs both sides; a pair is fair when both
+// sides report the same CPU model.
+const byCell = new Map();
+for (const r of runners) {
+  const cell = r.job.replace(/^(before|after)-/, '');
+  if (!byCell.has(cell)) byCell.set(cell, new Set());
+  byCell.get(cell).add(r.cpu);
+}
+const unfair = [...byCell].filter(([, set]) => set.size > 1).map(([cell]) => cell);
+lines.push(
+  `Runner CPU model(s): ${cpus.join(' | ') || 'unknown'}. ${unfair.length ? `**Before and after ran on different CPU models in: ${unfair.join(', ')}; timing deltas there compare different CPUs.**` : 'Before and after share one runner (one CPU model) in every throttle × text cell.'}`,
+  '',
+);
 lines.push(
   '| Case | Scenario | CPU× | Text | p95 ms before → after | p99 | dropped | first load ms | blank ms | overlap/gap/misplaced frames (after) | max pos err px (after) | jumps / drift px (after) | append p50 ms | rows in DOM | Verdict |',
   '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
