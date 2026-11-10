@@ -1,16 +1,18 @@
 {
-  "before": "2e6162c9ac8516aa85003d8c2a6714ad8979fe1e",
-  "after": "2e6162c9ac8516aa85003d8c2a6714ad8979fe1e",
-  "label": "smoke: main vs main",
+  "before": "da3dbdc8bd8649827f23adce5ac415f9cdda2858",
+  "after": "be02658701485b7e26848f42ac63af304c2120c5",
+  "label": "(A) #10810 shared windowing engine (Table)",
   "cases": [
     "table"
   ],
-  "scenarios": "C-fling-10k,C-insert-above,APPEND",
+  "scenarios": "C-fling-10k,C-fling-100k,C-wheel-10k,C-drag-10k,C-jump-100k,C-insert-above,APPEND",
   "throttles": [
-    1
+    1,
+    4
   ],
   "texts": [
-    100
+    100,
+    200
   ],
-  "runs": 1
+  "runs": 3
 }
