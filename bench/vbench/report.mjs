@@ -145,7 +145,8 @@ function verdicts(engine, frameBar) {
   }
   // A correctness failure in any scenario overrides a performance pass.
   for (const sc of SCENARIOS) {
-    if (sc.startsWith('S11')) continue;
+    // A4 is reported, not judged: see "Harness caveats".
+    if (sc.startsWith('S11') || sc.startsWith('A4')) continue;
     for (const th of THROTTLES) {
       const s = get(engine, sc, th);
       if (s && !correct(s)) why.push(`${sc}@${th}× not correct (overlap ${fmt(s.overlapFrames)}, gap ${fmt(s.gapFrames)}, misplaced ${fmt(s.positionFrames)} frames, errors ${s.errors})`);
@@ -177,14 +178,22 @@ for (const engine of ENGINES) {
   const a10 = verdicts(engine, 'vsync');
   const strict = verdicts(engine, 'strict');
   const bytes = bundles[engine]?.gzipBytes ?? null;
-  if (a10.pass) passers.push({engine, bytes});
   const strictOnly = strict.why.filter(w => !a10.why.includes(w));
+  if (engine === 'listwindow') {
+    // Candidate 1 runs at its native fixed height: rows of one pitch, so
+    // variable-height scenarios are "not supported" (protocol, candidate 1).
+    lines.push(`| ${LABELS[engine]} | fixed height only (${a10.pass ? 'its fixed-height runs pass' : 'its fixed-height runs fail'}); variable heights not supported | ${strict.pass ? 'fixed height only (pass)' : 'fixed height only (fail)'} | ${fmt(bytes)} | ${brief(a10.why) || 'not a variable-height candidate'} | ${brief(strictOnly)} |`);
+    continue;
+  }
+  if (a10.pass) passers.push({engine, bytes});
   lines.push(`| ${LABELS[engine]} | ${a10.pass ? 'yes' : 'no'} | ${strict.pass ? 'yes' : 'no'} | ${fmt(bytes)} | ${brief(a10.why)} | ${brief(strictOnly)} |`);
 }
 lines.push('');
 passers.sort((a, b) => (a.bytes ?? Infinity) - (b.bytes ?? Infinity));
+const failCount = engine => verdicts(engine, 'vsync').why.length;
+const nearest = ENGINES.filter(e => e !== 'listwindow').sort((a, b) => failCount(a) - failCount(b));
 lines.push(
-  `**Recommendation:** ${passers.length ? `${LABELS[passers[0].engine]}: passes the bar (A10) with the fewest bytes among ${passers.length} passer(s).` : 'no candidate passes the full bar; see the tables for the nearest.'}`,
+  `**Recommendation:** ${passers.length ? `${LABELS[passers[0].engine]}: passes the bar (A10) with the fewest bytes among ${passers.length} variable-height passer(s).` : `no variable-height candidate passes the full bar. Nearest by failing checks: ${nearest.map(e => `${LABELS[e]} (${failCount(e)})`).join(', ')}.`}`,
   '',
 );
 
@@ -242,6 +251,12 @@ lines.push(
 
   '- Text scaling (Table windowing turns off at 200% text): S1-text200 runs S1 with the root text at 200%. An engine passes when it stays windowed and its rows are neither misplaced nor overlapping. Candidate 1 renders a fixed 48 px pitch, so at 200% its rows clip their text by construction; that is the behavior the shared engine must replace.',
   '- Page scroll (ChatVirtualizer on page scroll opened far down, blank): S8-S1-page, S8-S3-page and S8-S5-page run each engine with the page as the scroller and a 120 px header above the list, so the list does not start at the document top. A blank viewport counts as blank time and fails correctness.',
+  '',
+);
+lines.push('## Harness caveats', '');
+lines.push(
+  '- A4 (scroll up into unmeasured rows) is reported but not judged: every engine shows a jump on every wheel step, including candidate 1, whose rows never change size. Chromium animates each wheel scroll for about 100–200 ms, and the harness marked input as ended before that animation finished, so the animation counts as jumps. A4 needs a re-run with the wheel animation waited out before its result can count.',
+  '- S1-text200 for candidate 1: fixed 48 px rows clip their text at 200%, so its blank time there comes from rows that cannot grow.',
   '',
 );
 lines.push('## Not measured in this pass (reported by name; never counted as a pass)', '');

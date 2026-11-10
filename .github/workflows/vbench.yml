@@ -54,7 +54,9 @@ jobs:
               const c = require("./bench/vbench/compare.json");
               if (!/^[0-9a-f]{40}$/.test(c.before) || !/^[0-9a-f]{40}$/.test(c.after)) throw new Error("compare.json needs full before and after SHAs");
               const include = [];
-              for (const side of ["before", "after"]) for (const throttle of c.throttles) for (const text of c.texts) include.push({side, throttle, text});
+              // Both sides run in the same job, so before and after share one
+              // runner and one CPU model.
+              for (const throttle of c.throttles) for (const text of c.texts) include.push({throttle, text});
               out.push(`c_matrix=${JSON.stringify({include})}`,
                 `c_sides=${JSON.stringify({include: [{side: "before", ref: c.before}, {side: "after", ref: c.after}]})}`,
                 `c_scenarios=${c.scenarios}`, `c_runs=${c.runs}`, `c_cases=${c.cases.join(",")}`);
@@ -242,24 +244,33 @@ jobs:
         run: npx playwright install chromium
       - uses: actions/download-artifact@v8
         with:
-          name: vbench-sandbox-${{ matrix.side }}
-          path: apps/sandbox/out
-      - name: Measure
+          name: vbench-sandbox-before
+          path: vbench-out-before
+      - uses: actions/download-artifact@v8
+        with:
+          name: vbench-sandbox-after
+          path: vbench-out-after
+      - name: Measure before, then after, on this runner
         env:
           VBENCH_PAGE: vbench
           VBENCH_SET: components
-          VBENCH_SIDE: ${{ matrix.side }}
           VBENCH_ENGINES: ${{ needs.plan.outputs.c_cases }}
           VBENCH_THROTTLE: ${{ matrix.throttle }}
           VBENCH_TEXT: ${{ matrix.text }}
           VBENCH_SCENARIOS: ${{ needs.plan.outputs.c_scenarios }}
           VBENCH_RUNS: ${{ needs.plan.outputs.c_runs }}
-          VBENCH_RESULTS_DIR: vbench-results/${{ matrix.side }}-t${{ matrix.throttle }}-x${{ matrix.text }}
-        run: pnpm exec playwright test --config bench/vbench/playwright.vbench.config.ts
+        run: |
+          status=0
+          for side in before after; do
+            VBENCH_SIDE=$side VBENCH_SITE=vbench-out-$side \
+              VBENCH_RESULTS_DIR=vbench-results/$side-t${{ matrix.throttle }}-x${{ matrix.text }} \
+              pnpm exec playwright test --config bench/vbench/playwright.vbench.config.ts || status=1
+          done
+          exit $status
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: vbench-results-${{ matrix.side }}-t${{ matrix.throttle }}-x${{ matrix.text }}
+          name: vbench-results-t${{ matrix.throttle }}-x${{ matrix.text }}
           path: vbench-results
           retention-days: 30
           if-no-files-found: warn
