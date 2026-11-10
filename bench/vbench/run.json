@@ -1,5 +1,5 @@
 {
-  "mode": "bakeoff",
+  "mode": "both",
   "engines": [
     "listwindow",
     "chat",
