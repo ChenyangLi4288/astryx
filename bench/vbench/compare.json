@@ -1,17 +1,22 @@
 {
-  "before": "f6d2c316878690f34602ab07fbeb0039666e653c",
-  "after": "c518793e0e01a84670f6015ba0fcfa18b838a1b0",
-  "label": "(A) #10810 at head c518793e (shared windowing engine, Table) vs main f6d2c316",
+  "before": "db705b96122c032d5a2455b56cbd05d47a9c83dc",
+  "after": "fcbe2505d0c5e875e5b1e56ad9ee1c3999166ce0",
+  "label": "#11000 at head fcbe2505 (Table keeps windowing at a measured shared row height) vs main db705b96",
   "cases": [
     "table"
   ],
-  "scenarios": "C-fling-10k,C-fling-100k,C-wheel-10k,C-drag-10k,C-jump-100k,C-insert-above,APPEND",
+  "scenarios": "C-fling-10k,C-resize,C-width",
   "throttles": [
     1,
     4
   ],
   "texts": [
-    100
+    100,
+    200
   ],
-  "runs": 3
+  "runs": 3,
+  "skip": [
+    "C-resize|100",
+    "C-width|100"
+  ]
 }

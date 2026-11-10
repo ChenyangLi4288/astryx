@@ -149,8 +149,13 @@ const SCENARIO_LIST = SET.filter(s => SCENARIO_IDS.has(s.id));
 const A1_SCENARIOS = new Set(
   (process.env.VBENCH_A1_SCENARIOS ?? 'S1,S3,S4,S5,S6,S7').split(','),
 );
-const runsCell = (engine: string, scenario: {id: string}) =>
-  !engine.includes('@') || A1_SCENARIOS.has(scenario.id);
+// Compare mode: `scenario|text` pairs to leave out (e.g. `C-width|100`).
+const SKIP = new Set(
+  (process.env.VBENCH_SKIP ?? '').split(',').filter(Boolean),
+);
+const runsCell = (engine: string, scenario: {id: string; text?: number}) =>
+  (!engine.includes('@') || A1_SCENARIOS.has(scenario.id)) &&
+  !SKIP.has(`${scenario.id}|${scenario.text ?? TEXT}`);
 if (process.env.VBENCH_INTERLEAVE === '1') {
   for (const scenario of SCENARIO_LIST) {
     for (let run = 0; run < RUNS; run++) {
@@ -248,6 +253,13 @@ for (const {engine, scenario, run} of CELLS) {
             });
           }
           result = await scenario.run(page, cdp);
+          // P6: rows in the DOM at the end, to tell windowed from full render.
+          result.extra = {
+            ...result.extra,
+            rowsRendered: await page.evaluate(
+              () => document.querySelectorAll('[data-vbench-key]').length,
+            ),
+          };
         } catch (e) {
           error = String(e);
         }

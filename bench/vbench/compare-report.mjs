@@ -68,6 +68,7 @@ function sum(list) {
     jumps: median(c.map(x => x.jumps)),
     drift: median(c.map(x => x.maxDriftPx)),
     appendP50: median(list.map(r => r.extra?.appendMsP50)),
+    rowsRendered: median(list.map(r => r.extra?.rowsRendered)),
     appendP95: median(list.map(r => r.extra?.appendMsP95)),
   };
 }
@@ -78,8 +79,8 @@ lines.push(`Before \`${config.before.slice(0, 10)}\` · after \`${config.after.s
 const cpus = [...new Set(runners.map(r => r.cpu))];
 lines.push(`Runner CPU model(s): ${cpus.join(' | ') || 'unknown'}${cpus.length > 1 ? ' — **more than one; timing deltas compare different CPUs**' : ''}.`, '');
 lines.push(
-  '| Case | Scenario | CPU× | Text | p95 ms before → after | p99 | dropped | first load ms | blank ms | overlap/gap/misplaced frames (after) | max pos err px (after) | jumps / drift px (after) | append p50 ms | Verdict |',
-  '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+  '| Case | Scenario | CPU× | Text | p95 ms before → after | p99 | dropped | first load ms | blank ms | overlap/gap/misplaced frames (after) | max pos err px (after) | jumps / drift px (after) | append p50 ms | rows in DOM | Verdict |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
 );
 const failures = [];
 for (const key of keys) {
@@ -98,12 +99,12 @@ for (const key of keys) {
   if (why.length) failures.push(`${engine} ${scenario} @${throttle}× text ${text}%: ${why.join('; ')}`);
   const arrow = (x, y, d = 1) => `${fmt(x, d)} → ${fmt(y, d)}`;
   lines.push(
-    `| ${engine} | ${scenario} | ${throttle} | ${text}% | ${arrow(b?.p95, a?.p95)} | ${arrow(b?.p99, a?.p99)} | ${arrow(b?.dropped, a?.dropped)} | ${arrow(b?.firstRenderMs, a?.firstRenderMs, 0)} | ${arrow(b?.blankMs, a?.blankMs, 0)} | ${fmt(a?.overlap)}/${fmt(a?.gap)}/${fmt(a?.misplaced)} | ${fmt(a?.maxPos)} | ${fmt(a?.jumps)} / ${fmt(a?.drift)} | ${arrow(b?.appendP50, a?.appendP50, 2)} | ${why.length ? `✗ ${why.join('; ')}` : '✓'} |`,
+    `| ${engine} | ${scenario} | ${throttle} | ${text}% | ${arrow(b?.p95, a?.p95)} | ${arrow(b?.p99, a?.p99)} | ${arrow(b?.dropped, a?.dropped)} | ${arrow(b?.firstRenderMs, a?.firstRenderMs, 0)} | ${arrow(b?.blankMs, a?.blankMs, 0)} | ${fmt(a?.overlap)}/${fmt(a?.gap)}/${fmt(a?.misplaced)} | ${fmt(a?.maxPos)} | ${fmt(a?.jumps)} / ${fmt(a?.drift)} | ${arrow(b?.appendP50, a?.appendP50, 2)} | ${arrow(b?.rowsRendered, a?.rowsRendered, 0)} | ${why.length ? `✗ ${why.join('; ')}` : '✓'} |`,
   );
 }
 lines.push('', failures.length ? `**${failures.length} row(s) fail.**` : '**Every row passes.**', '');
 lines.push(
-  'Checks per frame: no overlap or gap between adjacent rows, each row within 1 px of an unwindowed render of the same rows (2 frames of grace after an insert), viewport coverage, and the anchored row still without input (jumps > 1 px). Timing: rAF deltas; dropped = frames over 25 ms; first load = navigation to ready; append = one appended row to its next frame.',
+  'Checks per frame: no overlap or gap between adjacent rows, each row within 1 px of an unwindowed render of the same rows (2 frames of grace after an insert), viewport coverage, and the anchored row still without input (jumps > 1 px). Timing: rAF deltas; dropped = frames over 25 ms; first load = navigation to ready; append = one appended row to its next frame; rows in DOM = rows rendered at the end (windowed vs full render).',
 );
 fs.mkdirSync(outDir, {recursive: true});
 fs.writeFileSync(path.join(outDir, 'compare.md'), `${lines.join('\n')}\n`);

@@ -671,6 +671,9 @@ const s11 = (scroller: ScenarioDef['scroller'], id: string): ScenarioDef => ({
   run: async () => ({frames: [], mutations: [], extra: {}}),
 });
 
+// Engine-swap compare: the scroller's width changes mid-list.
+COMPONENT_SCENARIOS.push({...s12, id: 'C-width'});
+
 const BASE: ScenarioDef[] = [
   s1('container', 'S1'),
   {...s1('container', 'S1-text200'), text: 200},

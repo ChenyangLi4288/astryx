@@ -35,6 +35,7 @@ jobs:
       c_sides: ${{ steps.plan.outputs.c_sides }}
       c_scenarios: ${{ steps.plan.outputs.c_scenarios }}
       c_runs: ${{ steps.plan.outputs.c_runs }}
+      c_skip: ${{ steps.plan.outputs.c_skip }}
       c_cases: ${{ steps.plan.outputs.c_cases }}
     steps:
       - uses: actions/checkout@v7
@@ -59,7 +60,7 @@ jobs:
               for (const throttle of c.throttles) for (const text of c.texts) include.push({throttle, text});
               out.push(`c_matrix=${JSON.stringify({include})}`,
                 `c_sides=${JSON.stringify({include: [{side: "before", ref: c.before}, {side: "after", ref: c.after}]})}`,
-                `c_scenarios=${c.scenarios}`, `c_runs=${c.runs}`, `c_cases=${c.cases.join(",")}`);
+                `c_scenarios=${c.scenarios}`, `c_runs=${c.runs}`, `c_skip=${(c.skip ?? []).join(",")}`, `c_cases=${c.cases.join(",")}`);
             }
             if (modes.includes("bakeoff")) {
               // Every job runs all engines for its scenarios, so engines are
@@ -227,7 +228,7 @@ jobs:
     needs: [plan, compare-build]
     if: needs.plan.outputs.compare == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 120
     permissions:
       contents: read
     strategy:
@@ -259,6 +260,7 @@ jobs:
           VBENCH_TEXT: ${{ matrix.text }}
           VBENCH_SCENARIOS: ${{ needs.plan.outputs.c_scenarios }}
           VBENCH_RUNS: ${{ needs.plan.outputs.c_runs }}
+          VBENCH_SKIP: ${{ needs.plan.outputs.c_skip }}
         run: |
           status=0
           for side in before after; do

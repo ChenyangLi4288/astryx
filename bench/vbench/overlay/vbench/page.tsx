@@ -91,6 +91,8 @@ function TableCase({rows, windowed}: {rows: Row[]; windowed: boolean}) {
         key: 'name',
         header: 'Product',
         // No renderCell: a custom cell renderer turns Table windowing off.
+        // Wrapping text lets one row grow (C-resize).
+        textOverflow: 'wrap',
       },
       {key: 'status', header: 'Status'},
       {key: 'amount', header: 'Amount'},
@@ -163,8 +165,25 @@ export default function VbenchComponentsPage() {
           current.rows = next;
           return next;
         }),
-      // Table rows have one exact height; a resize does not apply.
-      resize: () => {},
+      // One row grows: its name gets wrapping words, about one line per 20 px.
+      resize: (key: string, delta: number) =>
+        setRows(prev => {
+          const words = Math.max(1, Math.ceil(delta / 20)) * 8;
+          const next = (prev ?? []).map(r =>
+            r.id === key
+              ? {
+                  ...r,
+                  name: `${r.name} ${Array.from({length: words}, (_, i) => `word${i}`).join(' ')}`,
+                }
+              : r,
+          );
+          current.rows = next;
+          return next;
+        }),
+      /** The list's width in px (null restores the full width). */
+      setWidth: (px: number | null) => {
+        document.body.style.width = px == null ? '' : `${px}px`;
+      },
       setAnchor: (mode: string, key: string | null = null) => {
         anchorMode = mode;
         anchorKey = key;
