@@ -12,7 +12,7 @@
     "chat@direct"
   ],
   "throttles": [
-    1
+    4
   ],
   "groups": [
     [

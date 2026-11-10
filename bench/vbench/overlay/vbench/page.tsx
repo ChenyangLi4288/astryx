@@ -48,6 +48,9 @@ function makeRows(count: number, random: () => number, prefix: string): Row[] {
 
 const VIEWPORT = 600;
 const ROW_HEIGHT = 48;
+// The unwindowed render is the ground truth, so its rows take the same pitch
+// as the windowed rows.
+const ROW_PITCH_CSS = `tbody tr { height: ${ROW_HEIGHT}px; box-sizing: border-box; }`;
 
 function scrollableAncestor(el: Element | null): HTMLElement | null {
   let node = el?.parentElement ?? null;
@@ -262,6 +265,7 @@ export default function VbenchComponentsPage() {
       <div
         data-vbench-scroller
         style={{height: VIEWPORT, overflowY: 'auto', overflowAnchor: 'none'}}>
+        <style>{ROW_PITCH_CSS}</style>
         <TableCase rows={rows} windowed={false} />
       </div>
     );
@@ -276,6 +280,7 @@ export default function VbenchComponentsPage() {
         display: 'flex',
         flexDirection: 'column',
       }}>
+      <style>{ROW_PITCH_CSS}</style>
       <TableCase rows={rows} windowed />
     </div>
   );
