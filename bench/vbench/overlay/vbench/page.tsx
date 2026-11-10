@@ -75,10 +75,13 @@ function rowOf(key: string): HTMLElement | null {
 }
 
 function TableCase({rows, windowed}: {rows: Row[]; windowed: boolean}) {
+  // Both names: refs before the viewport rename read `viewportHeight`,
+  // refs after it read `initialViewportHeight`; each ignores the other.
   const virtualization = useTableRowsVirtualization({
     rowHeight: ROW_HEIGHT,
     viewportHeight: VIEWPORT,
-  });
+    initialViewportHeight: VIEWPORT,
+  } as unknown as Parameters<typeof useTableRowsVirtualization>[0]);
   const columns = useMemo(
     () => [
       {
@@ -263,5 +266,17 @@ export default function VbenchComponentsPage() {
       </div>
     );
   }
-  return <TableCase rows={rows} windowed />;
+  // A fixed-height parent: after the viewport rename, Table takes its
+  // scroll area's height from its parent.
+  return (
+    <div
+      style={{
+        height: VIEWPORT,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+      <TableCase rows={rows} windowed />
+    </div>
+  );
 }
