@@ -14,7 +14,6 @@
 import type {CDPSession, Page} from '@playwright/test';
 import {
   heapMb,
-  nextStage,
   setInput,
   startRecording,
   stopRecording,
@@ -337,10 +336,12 @@ const s5 = (scroller: ScenarioDef['scroller'], id: string) =>
     );
     await startRecording(page, {rects: true});
     await settle(page, 200);
-    await page.evaluate(() =>
-      (window as unknown as {__vbench: Api}).__vbench.insertAbove(50),
-    );
-    await nextStage(page);
+    // A14 (3): the stage moves in the same step as the mutation.
+    await page.evaluate(() => {
+      const w = window as unknown as {__vbench: Api; __vbenchStage: number};
+      w.__vbenchStage = (w.__vbenchStage ?? 0) + 1;
+      w.__vbench.insertAbove(50);
+    });
     mutations.push({kind: 'insertAbove', count: 50});
     await settle(page, 2000);
     return {
@@ -393,11 +394,13 @@ const s6 = (mode: 'first-visible' | 'item', id: string) =>
     await settle(page, 200);
     for (const delta of [300, -300]) {
       await page.evaluate(
-        ({key, delta}) =>
-          (window as unknown as {__vbench: Api}).__vbench.resize(key, delta),
+        ({key, delta}) => {
+          const w = window as unknown as {__vbench: Api; __vbenchStage: number};
+          w.__vbenchStage = (w.__vbenchStage ?? 0) + 1;
+          w.__vbench.resize(key, delta);
+        },
         {key: picked.mid ?? '', delta},
       );
-      await nextStage(page);
       mutations.push({kind: 'resize', key: picked.mid ?? '', delta});
       await settle(page, 1000);
     }
@@ -618,11 +621,11 @@ const s12 = def('S12', 10_000, 'first-visible', 'container', async page => {
   await settle(page, 200);
   const full = page.viewportSize()?.width ?? 800;
   for (const px of [Math.round(full * 0.7), null]) {
-    await page.evaluate(
-      w => (window as unknown as {__vbench: Api}).__vbench.setWidth(w),
-      px,
-    );
-    await nextStage(page);
+    await page.evaluate(px => {
+      const w = window as unknown as {__vbench: Api; __vbenchStage: number};
+      w.__vbenchStage = (w.__vbenchStage ?? 0) + 1;
+      w.__vbench.setWidth(px);
+    }, px);
     mutations.push({kind: 'width', px});
     await settle(page, 1200);
   }
