@@ -7,7 +7,7 @@
  * @input `?engine=` (a component case: table), `?n=` rows, `?seed=`,
  *   `?text=` (100 | 200), `?mode=` (windowed | unwindowed)
  * @output A component's long list through its public API only, with each
- *   row's key in a `data-vbench-key` element inside the row and the
+ *   row's key in a `data-vbench-key` attribute on its <tr> and the
  *   `window.__vbench` controls of the vbench row contract
  * @position Overlay page of bench/vbench: the compare workflow copies it into
  *   the before and after trees, so the same page measures both. Public API
@@ -84,9 +84,7 @@ function TableCase({rows, windowed}: {rows: Row[]; windowed: boolean}) {
       {
         key: 'name',
         header: 'Product',
-        renderCell: (row: Row) => (
-          <span data-vbench-key={row.id}>{row.name}</span>
-        ),
+        // No renderCell: a custom cell renderer turns Table windowing off.
       },
       {key: 'status', header: 'Status'},
       {key: 'amount', header: 'Amount'},
@@ -203,13 +201,30 @@ export default function VbenchComponentsPage() {
       focusedKey: () =>
         document.activeElement
           ?.closest('tr')
-          ?.querySelector('[data-vbench-key]')
           ?.getAttribute('data-vbench-key') ?? null,
       focusedPosition: () => null,
       expectedPosition: (key: string) =>
         current.rows.findIndex(r => r.id === key) + 1,
     };
     (window as unknown as {__vbench: typeof api}).__vbench = api;
+    // The default cell renderer is kept, so each row's key is written on its
+    // <tr> from the row's name as rows mount (before the next frame reads).
+    const tag = () => {
+      const byName = new Map(current.rows.map(r => [r.name, r.id]));
+      for (const tr of document.querySelectorAll<HTMLElement>('tbody tr')) {
+        if (tr.hasAttribute('data-vbench-key')) {
+          continue;
+        }
+        const id = byName.get(tr.querySelector('td')?.textContent ?? '');
+        if (id) {
+          tr.setAttribute('data-vbench-key', id);
+        }
+      }
+    };
+    new MutationObserver(tag).observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
     (window as unknown as {__vbenchRows: {rows: Row[]}}).__vbenchRows = current;
   }, [params]);
 

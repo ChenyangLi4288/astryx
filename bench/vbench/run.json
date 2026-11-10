@@ -1,5 +1,5 @@
 {
-  "mode": "compare",
+  "mode": "both",
   "engines": [
     "listwindow",
     "chat",
@@ -12,9 +12,7 @@
     "chat@direct"
   ],
   "throttles": [
-    1,
-    4,
-    6
+    1
   ],
   "groups": [
     [

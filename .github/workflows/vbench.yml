@@ -248,7 +248,6 @@ jobs:
         env:
           VBENCH_PAGE: vbench
           VBENCH_SET: components
-          VBENCH_ROW_CLOSEST: tr
           VBENCH_SIDE: ${{ matrix.side }}
           VBENCH_ENGINES: ${{ needs.plan.outputs.c_cases }}
           VBENCH_THROTTLE: ${{ matrix.throttle }}
