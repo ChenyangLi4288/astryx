@@ -321,11 +321,15 @@ decodes each frame once. A proof reads frames up to
 decode only those. Pass either as `control`: the component passes when it moved on every frame the control
 moved and its longest stall is no longer than the control's. Both are read from
 the same screencast frames, so a compositor animation misses none. A window in
-which the control moved on fewer than four frames fails, since the machine
-presented too little to judge; the failure names the cast's frames in the
-window and its longest gap. When no frame came for longer than
-`FRAME_STARVATION_MS` there too, the machine starved the run, and
-`busyWindowProof` throws `FrameStarvationError` instead of returning a verdict.
+which the control moved on fewer than four frames is under the floor. Under the
+floor, a run with no component failure on the frames shown is too little to
+judge: `busyWindowProof` throws `FrameStarvationError` instead of returning a
+verdict. The error names the control's moves, the cast's frames in the window
+and its longest gap. A component that missed a frame the control moved on, or
+stalled longer than it, failed on frames the compositor presented, so the
+verdict keeps that red. A run the machine starved, with no frame for longer
+than `FRAME_STARVATION_MS`, throws either way. `maxMedianFrameMs` judges the
+cast's pace, not the component, so under the floor it keeps no red.
 A run of frames with no new position counts as
 moved when the change that ends it is a single cast step: the component moves
 under one step a frame there, as on an easing tail, which the cast cannot show
@@ -352,6 +356,33 @@ the cast's step explains is then too little to judge: `busyWindowProof` throws
 `BusyFrameUnjudgedError` with each such frame, the component's move per frame
 there and the cast's step. A verdict that fails anyway comes back as it is, so
 a frozen or main-thread component stays a red on the component.
+
+A window that caught an animation (`blockMainThread` with `during`) predicts
+each frame instead, when two things hold. The proof passes both controls,
+`ahead` included, so every frame has a time of its own. The engine is
+Chromium. A geometry replay also needs the harness marker on the caught
+element. Once the loop ends, the
+page replays the element's geometry animations, paused, on a hidden copy of
+its box. The copy is aligned to the element, and its box is read every 2 ms.
+A fade or a pseudo-element replays one numeric channel. The tracked value at
+rest and at the curve's end map that channel to a position. The proof dates
+each frame on the controls' clock, from the controls' starts that the window
+keeps. A frame predicted to move a full cast step since the last new position must
+show one, so a hold ends once its moves add up to a step.
+A frame predicted to move less is too little to judge, and so is a frame with
+no control reading of its own. Each such frame is named in the proof's
+`unjudged` list and in its summary. It counts neither as moved nor as missed,
+and `judgeEveryFrame` throws for none. When too few judged frames are left,
+the proof throws `FrameStarvationError`. Where a replay predicts, one the
+proof cannot read throws `BusyPredictionError`: an ancestor moves too, or a
+run composites onto another. A replay whose travel or first judged position
+differs from the cast's by more than two steps or a tenth of the travel falls
+back by name. So does a geometry window without the marker, a window without
+`ahead` or in WebKit, and a window whose run left the element before the
+replay. WebKit reads the element's box at the loop's end before its
+animation's current time, so the replay cannot be aligned there. A window that falls back is judged exactly as without a
+replay, and its notes say why. The proof gives its `judged` part in the
+cast's stamps, so a spec selects frames by it as before.
 
 `controlClock(control)` reads the compositor's own time in each frame off the
 control's position, for a proof that judges motion against time, not against
@@ -409,8 +440,13 @@ belongs to its run. A run whose control moved on fewer frames than
 and the pool leaves it out, so it never counts as a pass. A run whose block
 began too late for its motion is left out the same way: its `runs` entry
 is null, and `late` holds its `BusyWindowTooLateError`. The pool reads each
-run without the starvation throw. The pool fails with
-fewer than `minJudgedRuns` judged runs (half of all the runs, rounded up). In each judged run,
+run without the starvation throw. With fewer than `minJudgedRuns` judged runs
+(half of all the runs, rounded up), or a control that moved on fewer than four
+frames over them, the pool is under the floor. Under the floor, a pool with no
+component failure on the frames shown is too little to judge, and it throws
+`FrameStarvationError`. A pool left short of judged runs by a run that began
+too late fails instead, and so does a pool whose judged runs show a component
+red. In each judged run,
 the component must move on every frame its control moved on, so a freeze fails
 its run.
 
