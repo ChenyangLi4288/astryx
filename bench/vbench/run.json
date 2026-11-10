@@ -1,60 +1,19 @@
 {
-  "mode": "compare",
+  "mode": "bakeoff",
   "engines": [
     "listwindow",
     "chat",
     "tanstack",
     "fenwick",
-    "recycle",
-    "listwindow@direct",
-    "tanstack@direct",
-    "fenwick@direct",
-    "chat@direct"
+    "recycle"
   ],
   "throttles": [
-    6
+    1,
+    4
   ],
   "groups": [
     [
-      "S1",
-      "S1-text200",
-      "S2"
-    ],
-    [
-      "S3"
-    ],
-    [
-      "S8-S3-page"
-    ],
-    [
-      "S4",
-      "S5",
-      "S6",
-      "S6-item"
-    ],
-    [
-      "S7",
-      "S9",
-      "S12",
       "A4",
-      "S11",
-      "S11-page"
-    ],
-    [
-      "S8-S1-page",
-      "S1-text200-page",
-      "S2-page"
-    ],
-    [
-      "S4-page",
-      "S8-S5-page",
-      "S6-page",
-      "S6-item-page"
-    ],
-    [
-      "S7-page",
-      "S9-page",
-      "S12-page",
       "A4-page"
     ]
   ],

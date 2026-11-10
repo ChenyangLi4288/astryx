@@ -630,12 +630,20 @@ const a4 = def('A4', 10_000, 'first-visible', 'container', async page => {
   await scrollToFraction(page, 0.75);
   await settle(page, 300);
   await startRecording(page, {rects: true});
-  const viewport = page.viewportSize() ?? {width: 800, height: 600};
-  await page.mouse.move(viewport.width / 2, viewport.height / 2);
   for (let i = 0; i < 40; i++) {
+    // An instant 300 px scroll up. A wheel event animates the scroll for
+    // 100–200 ms after the input, and that animation is not a jump.
     await setInput(page, true);
-    await page.mouse.wheel(0, -300);
-    await page.waitForTimeout(16);
+    await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-vbench-scroller]');
+      (el ?? window).scrollBy({top: -300, behavior: 'instant'});
+    });
+    await page.evaluate(
+      () =>
+        new Promise<void>(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
     await setInput(page, false);
     // The row at the top must hold still while the engine measures the rows
     // it just showed; a move here is a jump.

@@ -143,10 +143,16 @@ function verdicts(engine, frameBar) {
       }
     }
   }
+  // A4: no unprompted jump while rows above are measured.
+  for (const sc of ['A4', 'A4-page']) {
+    for (const th of THROTTLES) {
+      const s = get(engine, sc, th);
+      if (s && (s.jumps == null || s.jumps > 0)) why.push(`${sc}@${th}× jumps ${fmt(s.jumps)}`);
+    }
+  }
   // A correctness failure in any scenario overrides a performance pass.
   for (const sc of SCENARIOS) {
-    // A4 is reported, not judged: see "Harness caveats".
-    if (sc.startsWith('S11') || sc.startsWith('A4')) continue;
+    if (sc.startsWith('S11')) continue;
     for (const th of THROTTLES) {
       const s = get(engine, sc, th);
       if (s && !correct(s)) why.push(`${sc}@${th}× not correct (overlap ${fmt(s.overlapFrames)}, gap ${fmt(s.gapFrames)}, misplaced ${fmt(s.positionFrames)} frames, errors ${s.errors})`);
@@ -255,7 +261,7 @@ lines.push(
 );
 lines.push('## Harness caveats', '');
 lines.push(
-  '- A4 (scroll up into unmeasured rows) is reported but not judged: every engine shows a jump on every wheel step, including candidate 1, whose rows never change size. Chromium animates each wheel scroll for about 100–200 ms, and the harness marked input as ended before that animation finished, so the animation counts as jumps. A4 needs a re-run with the wheel animation waited out before its result can count.',
+  '- A4 (scroll up into unmeasured rows) uses instant 300 px scroll steps. A first pass with wheel steps counted Chromium\'s 100–200 ms wheel animation as jumps for every engine, including candidate 1, whose rows never change size; that pass is discarded. A4 runs at 1× and 4× CPU (the protocol\'s pre-registered throttles), not 6×.',
   '- S1-text200 for candidate 1: fixed 48 px rows clip their text at 200%, so its blank time there comes from rows that cannot grow.',
   '',
 );
