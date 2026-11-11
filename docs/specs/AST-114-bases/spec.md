@@ -47,7 +47,9 @@ declares the adapters it serves (FR3, FR4), what a command declares it needs
   declarations are independent; FR6 fixes the order of their checks.
 - What each adapter step computes for a given platform: the base that ships
   the adapter owns that.
-- React Native platform commands: `spec:AST-112` FR13.
+- React Native platform commands: `spec:AST-112` FR13. This record adds no
+  command extension point; `spec:AST-112` OQ5 decides the `commands`
+  contribution.
 - Equivalent internal implementations remain valid when they satisfy this
   contract.
 
@@ -134,7 +136,10 @@ exports, named `<capability>.<step>`, from the closed list in FR4.
     under its confinement rules (`architecture:cli-surface` INV10) and every
     output;
   - loads only in a run whose command needs one of its steps. Listing,
-    discovery, help, and the manifest never load it (`spec:AST-039` FR6).
+    discovery, help, and the manifest never load it (`spec:AST-039` FR6);
+  - is imported by its path inside the package, with Node's own loader: no
+    `exports` resolution, no conditions, and no TypeScript, so it is a
+    JavaScript module the package ships.
 
   `astryx doctor integration validate` MUST warn about an adapter path that
   does not resolve, a module that fails its type, a capability not on FR4's
@@ -163,8 +168,9 @@ validate` does not check `base`.
   | `icons.appModule`          | the source that registers the project's icon sets with the base    |
   | `setup.guide`              | the steps that make an app use the base: imports, root wrapper     |
 
-  FR4 gap: Core's `setup.guide` is written into `init`, `build`, and the agent
-  text instead of coming from one step.
+  FR4 gap: Core's `setup.guide` is written into `init`, `build`,
+  `postinstall`, and the agent text instead of coming from one step, so in a
+  run on another base they write Core's web setup.
 
 - **FR5 — A command works on any base unless it declares a step.** A command,
   option, or argument value that declares nothing works on every base. One
@@ -217,6 +223,10 @@ theme` differs from `integration add component`. A step a command can do
   passes the loaded adapters to the command, so the command calls the active
   base's adapter with no flag and no lookup of its own.
 
+  FR6 gap: no command calls an adapter step, so a base other than Core serves
+  no step whatever its adapters declare: help hides every command and option
+  that declares one, and a run of one refuses with `reason: "not-declared"`.
+
 - **FR7 — Help shows what works; the manifest shows everything.** `astryx
 help`, `astryx --help`, and a group's help MUST list only the commands,
   subcommands, and options the active base serves, and only the examples that
@@ -232,8 +242,8 @@ help`, `astryx --help`, and a group's help MUST list only the commands,
   capability the base declares is listed, and a run whose adapter lacks the
   step refuses it (FR8).
 
-  FR7 gap: next-step hints, `doctor` fixes, and agent text name commands
-  without reading the active base.
+  FR7 gap: next-step hints, `doctor` fixes, and agent text, the block `init`
+  writes included, name commands without reading the active base.
 
 - **FR8 — A command the base cannot serve refuses with one line.** A command,
   option, or argument value that fails FR6's `requires` check MUST write

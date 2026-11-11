@@ -118,7 +118,7 @@ import {
   builtIntegrationPackages,
 } from './_adapter.mjs';
 import {checkBuilt} from './built-checks.mjs';
-import {currentNonCoreBase} from '../../foundation/bases/state.mjs';
+import {coreOnlyDocNames} from '../../foundation/bases/core-docs.mjs';
 
 /**
  * @typedef {'pass'|'warn'|'fail'|'info'} DoctorStatus
@@ -1525,6 +1525,21 @@ export async function checkCliDocs(_ctx, options = {}) {
 }
 
 /**
+ * Does a link problem name a doc in `names` as its missing target, written
+ * `"[<provider>:]<kind>:<name>"`?
+ * @param {string} problem
+ * @param {Set<string>} names
+ * @returns {boolean}
+ */
+function namesCoreDoc(problem, names) {
+  if (names.size === 0) return false;
+  for (const match of problem.matchAll(/"(?:[^":\s]+:)?[a-z-]+:([\w-]+)"/gu)) {
+    if (names.has(match[1])) return true;
+  }
+  return false;
+}
+
+/**
  * The docs tree builds with no error, and every CLI typed doc in a `cli/...`
  * group has a route in it (spec:AST-046): each placement names a namespace of
  * its own package and a slot that accepts it, exactly one namespace adopts
@@ -1564,19 +1579,21 @@ export async function checkDocsTree(_ctx, options = {}) {
       // Every link between docs names a doc that exists (spec:AST-047 FR9):
       // typed fields, reference and workflow blocks, and inline links. A
       // reference block also includes all it names. A run whose base is not
-      // Core leaves Core's docs out, so the CLI's links into them are checked
-      // only in a run on Core.
-      if (!currentNonCoreBase()) {
-        for (const node of tree.nodes.values()) {
-          for (const edge of typedEdges(tree, node).unresolved) {
-            problems.push(`${node.route}: ${edge}`);
-          }
+      // Core leaves Core's docs out; a link to one of them is not a problem.
+      const linkProblems = [];
+      for (const node of tree.nodes.values()) {
+        for (const edge of typedEdges(tree, node).unresolved) {
+          linkProblems.push(`${node.route}: ${edge}`);
         }
-        problems.push(...(await docsLinkProblems(catalog, tree)));
-        problems.push(
-          ...(await docsLinkProblems(catalog, tree, {references: true})),
-        );
       }
+      linkProblems.push(...(await docsLinkProblems(catalog, tree)));
+      linkProblems.push(
+        ...(await docsLinkProblems(catalog, tree, {references: true})),
+      );
+      const coreDocs = await coreOnlyDocNames();
+      problems.push(
+        ...linkProblems.filter(problem => !namesCoreDoc(problem, coreDocs)),
+      );
     }
     // New findings warn: a project that passed before keeps passing
     // (0.6 compatibility), and the warning names what to fix.

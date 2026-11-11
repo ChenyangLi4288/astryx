@@ -502,6 +502,7 @@ const LOADER_MODULES = {
   'foundation/discovery/docs-discovery.mjs': [
     'BUILTIN_DOCS_PACKAGE',
     'DocsCatalog',
+    'builtinTopicsForCore',
     'discoverBuiltinTopics',
     'discoverIntegrationDocs',
     'GRAPH_BLOCK_TYPES',

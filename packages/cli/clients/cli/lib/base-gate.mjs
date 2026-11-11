@@ -120,16 +120,23 @@ export function baseHelpSettings() {
 }
 
 /**
- * What help leaves out of one command's listing.
+ * What help leaves out under one command: the commands at any depth below
+ * it, and its own options.
  * @param {Command} cmd
  * @param {ActiveBase} base
  * @returns {{commands: number, options: number}}
  */
 function hiddenIn(cmd, base) {
-  const commands = childCommands(cmd).filter(
-    child =>
-      !(/** @type {any} */ (child)._hidden) && !commandAvailable(child, base),
-  ).length;
+  /** @param {Command} group @returns {number} hidden commands at any depth */
+  const hiddenBelow = group =>
+    childCommands(group)
+      .filter(child => !(/** @type {any} */ (child)._hidden))
+      .reduce((total, child) => {
+        const children = childCommands(child);
+        if (children.length > 0) return total + hiddenBelow(child);
+        return total + (commandAvailable(child, base) ? 0 : 1);
+      }, 0);
+  const commands = hiddenBelow(cmd);
   const options = (cmd.options ?? []).filter(
     option => !option.hidden && !optionAvailable(cmd, option, base),
   ).length;

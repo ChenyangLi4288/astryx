@@ -36,6 +36,7 @@ export async function runCli({cliRoot, argv, declinedProjectCli}) {
     createProgram,
     loadProjectDebugHandler,
     loadProjectForHelp,
+    refuseHelpWithoutBase,
     handleVersionJsonPreflight,
   } = await import('./index.mjs');
   // Only the commands these arguments need load, before anything below runs,
@@ -103,6 +104,7 @@ export async function runCli({cliRoot, argv, declinedProjectCli}) {
   // Help prints its commands while Commander parses, so a help run reads the
   // project's declared `cliCommand` here.
   await loadProjectForHelp();
+  await refuseHelpWithoutBase();
 
   // `--version --json` answers and exits without Commander, so it runs here —
   // after the handler exists, or the run would go unrecorded.

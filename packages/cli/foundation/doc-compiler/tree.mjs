@@ -847,12 +847,14 @@ export function cliRootNamespaceNames(dir = TREE_DOCS_DIR) {
  * assets/docs/tree, and, unless left out, every typed self-doc with its
  * `namespace` group. A file that fails to load or parse is a diagnostic, never
  * a thrown error.
- * @param {{selfDocs?: boolean, dir?: string}} [options]
+ * @param {{selfDocs?: boolean, dir?: string, allRoots?: boolean}} [options]
+ *   `allRoots`: every root, as a run on Core reads them, whatever the base
  * @returns {Promise<{namespaces: TreeNamespaceInput[], docs: TreeDocInput[], diagnostics: CompilerDiagnostic[]}>}
  */
 export async function loadTreeInputs({
   selfDocs = true,
   dir = TREE_DOCS_DIR,
+  allRoots = false,
 } = {}) {
   /** @type {TreeNamespaceInput[]} */
   const namespaces = [];
@@ -964,7 +966,7 @@ export async function loadTreeInputs({
       });
     }
   }
-  if (dir === TREE_DOCS_DIR && currentNonCoreBase()) {
+  if (dir === TREE_DOCS_DIR && !allRoots && currentNonCoreBase()) {
     return {...onlyCliRoots(namespaces, docs), diagnostics};
   }
   return {namespaces, docs, diagnostics};

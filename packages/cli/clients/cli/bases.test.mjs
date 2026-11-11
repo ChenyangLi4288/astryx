@@ -24,6 +24,7 @@ import {
 } from '../../foundation/bases/requirements.mjs';
 import {BASE_STEPS} from '../../foundation/bases/steps.mjs';
 import {coreBase} from '../../foundation/bases/core.mjs';
+import {unknownIntegrationKeys} from '../../authoring/integration/schema.mjs';
 import {refusesHereFirst} from './lib/base-gate.mjs';
 
 const BIN = path.resolve(import.meta.dirname, 'bin', 'astryx.mjs');
@@ -260,6 +261,14 @@ describe('base resolution', () => {
       projectHasCore: () => true,
     });
     expect(self.ok && self.base.name).toBe('@acme/native-ui');
+  });
+});
+
+describe('the base declaration', () => {
+  it('reports an adapter capability this CLI does not know', () => {
+    expect(
+      unknownIntegrationKeys({base: {adapters: {theme: './t.mjs', themes: './t.mjs'}}}),
+    ).toEqual(['base.adapters.theme']);
   });
 });
 
@@ -575,21 +584,65 @@ describe('a project whose only base is not Core', () => {
   );
 
   it(
-    'names a module that does not load',
+    'serves no step from a declared adapter, and never loads it',
     () => {
       const dir = project({
         '@acme/native-ui': {
           manifest:
             "export default {base: {adapters: {themes: './adapters/themes.mjs'}}};\n",
-          files: {'adapters/themes.mjs': 'throw new Error("broken");\n'},
+          files: {
+            'adapters/themes.mjs':
+              'throw new Error("an adapter module must not load here");\n',
+          },
         },
       });
+      const help = astryx(['theme', '--help'], dir);
+      expect(help.stdout).not.toMatch(/^ {2}targets /m);
       const r = astryx(['--json', 'theme', 'targets'], dir);
       expect(r.status).toBe(1);
       expect(r.json().requirement).toMatchObject({
-        reason: 'failed-to-load',
-        module: './adapters/themes.mjs',
+        missing: ['themes.targets'],
+        reason: 'not-declared',
       });
+      expect(r.json().requirement.module).toBeUndefined();
+    },
+    SLOW,
+  );
+
+  it(
+    'counts the commands hidden at any depth on the root help',
+    () => {
+      const dir = project({'@acme/native-ui': CONTENT_BASE});
+      const root = astryx(['--help'], dir);
+      expect(root.stdout.trimEnd().split('\n').at(-1)).toMatch(
+        /^\d+ commands hidden: the active base @acme\/native-ui does not provide the steps they need\.$/,
+      );
+    },
+    SLOW,
+  );
+
+  it(
+    'fails help when the base does not resolve',
+    () => {
+      const dir = project({'@acme/native-ui': CONTENT_BASE});
+      const missing = astryx(['--json', '--base', '@acme/nope', 'help'], dir);
+      expect(missing.status).toBe(1);
+      expect(missing.json().code).toBe('ERR_BASE_NOT_FOUND');
+      const two = project({'@acme/native-ui': CONTENT_BASE, '@acme/tv-ui': CONTENT_BASE});
+      const ambiguous = astryx(['--help'], two);
+      expect(ambiguous.status).toBe(1);
+      expect(ambiguous.stderr).toContain('more than one base');
+    },
+    SLOW,
+  );
+
+  it(
+    "keeps doctor's docs checks, leaving out links into Core's docs",
+    () => {
+      const dir = project({'@acme/native-ui': CONTENT_BASE});
+      const r = astryx(['--json', 'doctor'], dir);
+      const tree = r.json().data.checks.find(c => c.id === 'docs-tree');
+      expect(tree.status).toBe('pass');
     },
     SLOW,
   );

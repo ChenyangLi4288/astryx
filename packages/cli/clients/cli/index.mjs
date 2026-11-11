@@ -292,6 +292,24 @@ export async function loadProjectForHelp(argv = process.argv.slice(2)) {
 }
 
 /**
+ * Fail a help run whose base does not resolve, as every other run fails:
+ * help lists what the run's base serves, so with no base it has nothing true
+ * to list. Called from the bin after the help preload.
+ * @param {string[]} [argv] arguments after the binary.
+ * @returns {Promise<void>}
+ */
+export async function refuseHelpWithoutBase(argv = process.argv.slice(2)) {
+  const help =
+    argv.includes('--help') || argv.includes('-h') || firstOperand(argv) === 'help';
+  if (!help) return;
+  const {runBase} = await import('../../foundation/bases/resolve.mjs');
+  const resolution = runBase();
+  if (resolution.ok) return;
+  if (argv.includes('--json')) setJsonMode(true);
+  cliError(resolution.message, {code: resolution.code});
+}
+
+/**
  * Hand the whole invocation to the debug recorder: which command ran, its
  * positional arguments by name, its options and where each value came from,
  * and the root-level flags.

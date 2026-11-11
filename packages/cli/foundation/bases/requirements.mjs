@@ -83,8 +83,8 @@ export function longFlag(flag) {
 }
 
 /**
- * Run the check for one command run. A step passes when the base declares
- * its capability's adapter, the module loads, and it exports the step.
+ * Run the check for one command run. A step passes when the base serves it,
+ * declares its capability's adapter, the module loads, and it exports the step.
  * Core's steps are the CLI's own, so Core passes every step with no load.
  * @param {string} command
  * @param {import('../../authoring/doctypes/command/type').CommandDoc | undefined} doc
@@ -104,7 +104,7 @@ export async function checkRequirements(command, doc, given, base) {
     for (const step of part.requires) {
       const capability = capabilityOf(step);
       const file = base.adapters[capability];
-      if (file == null || base.dir == null) {
+      if (!base.steps.includes(step) || file == null || base.dir == null) {
         missing.push(step);
         continue;
       }

@@ -16,7 +16,7 @@ import {ERROR_CODES} from '../response/error-codes.mjs';
 import {installedProjectCoreDir} from '../fs/paths.mjs';
 import {resolveInstalledPackageDir} from '../integrations/installed-package.mjs';
 import {CORE_BASE_NAME, coreBase} from './core.mjs';
-import {BASE_CAPABILITIES, BASE_STEPS, capabilityOf} from './steps.mjs';
+import {BASE_CAPABILITIES} from './steps.mjs';
 import {registerRunBaseResolver} from './state.mjs';
 
 /**
@@ -29,8 +29,7 @@ import {registerRunBaseResolver} from './state.mjs';
  * @property {string | null} version the package version, when known
  * @property {Record<string, string>} adapters capability to module path,
  *   relative to `dir`, for the capabilities this CLI knows
- * @property {readonly string[]} steps the steps the declared capabilities
- *   cover
+ * @property {readonly string[]} steps the steps the base serves
  */
 
 /**
@@ -139,7 +138,10 @@ export function baseOf(integration) {
     dir: integration.__packageDir,
     version: integration.version ?? null,
     adapters,
-    steps: BASE_STEPS.filter(step => capabilityOf(step) in adapters),
+    // No command calls an adapter step, so a base other than Core serves no
+    // step, whatever its adapters declare. Help hides each command that needs
+    // one, and a run refuses it.
+    steps: [],
   };
 }
 

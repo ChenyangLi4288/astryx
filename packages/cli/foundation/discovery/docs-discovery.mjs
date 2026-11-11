@@ -134,10 +134,18 @@ export function isGuideRoute(target) {
  * @returns {Record<string, string>} topic name → absolute doc path
  */
 export function discoverBuiltinTopics() {
+  // These topics describe Core; they show only in a run whose base is Core.
+  if (currentNonCoreBase()) return Object.create(null);
+  return builtinTopicsForCore();
+}
+
+/**
+ * The CLI's own topics as a run on Core reads them, whatever the run's base.
+ * @returns {Record<string, string>} topic name → absolute doc path
+ */
+export function builtinTopicsForCore() {
   /** @type {Record<string, string>} */
   const topics = Object.create(null);
-  // These topics describe Core; they show only in a run whose base is Core.
-  if (currentNonCoreBase()) return topics;
   if (!fs.existsSync(BUILTIN_DOCS_DIR)) return topics;
   for (const file of listDir(BUILTIN_DOCS_DIR)) {
     const match = file.match(BUILTIN_TOPIC_FILE_RE);
