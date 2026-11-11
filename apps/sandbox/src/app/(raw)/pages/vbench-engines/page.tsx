@@ -37,7 +37,7 @@ import {
   windowScroll,
 } from '@tanstack/virtual-core';
 import {ChatVirtualizer, type ChatVirtualizerHandle} from '@astryxdesign/lab';
-import {calculateListWindow} from '../../../../../../../packages/core/src/utils/listWindow';
+import {calculateListWindow} from '../../../../../../../packages/core/src/virtualization/listWindow';
 import {FenwickOffsets} from './fenwick';
 import {
   HEADER_PX,
