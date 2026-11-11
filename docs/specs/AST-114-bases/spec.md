@@ -276,7 +276,8 @@ help`, `astryx --help`, and a group's help MUST list only the commands,
 - **FR9 — An integration builds on the bases it lists as peers.** An
   integration builds on each base its `package.json` lists in
   `peerDependencies`; one that lists no base builds on Core, unless it is
-  itself a base, which then builds on no base. An integration
+  itself a base, which then builds on no base. Only `peerDependencies` counts; other dependency fields
+  do not. An integration
   contributes to a run only when it builds on that run's active base, or is
   itself that base. One that does not is left out of the run, and `discover`
   and `doctor` list it with the bases it builds on. Integration authoring
