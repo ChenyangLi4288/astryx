@@ -744,6 +744,8 @@ describe('a project whose only base is not Core', () => {
       const component = astryx(['--json', 'component', 'Button'], dir);
       expect(component.status).toBe(1);
       expect(component.json().code).toBe('ERR_UNKNOWN_COMPONENT');
+      const listText = astryx(['component', '--list'], dir);
+      expect(listText.stdout).not.toContain('@astryxdesign/core');
       const list = astryx(['--json', 'component', '--list'], dir);
       expect(list.status).toBe(0);
       expect(list.json().data.components).toEqual({});

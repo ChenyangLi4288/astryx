@@ -215,7 +215,8 @@ theme` differs from `integration add component`. A step a command can do
   command's `requires`; each given option's `requires`; each given argument
   value's `requires`. A command's `spec:AST-081` FR4 `refuse` comes before
   them all: in a folder no project encloses, the check leaves a `refuse`
-  command to its own refusal. A step passes when the base declares its
+  command to its own refusal. A usage error, such as a missing
+  required argument, fails before the check. A step passes when the base declares its
   capability's adapter, the module loads, and it exports the step. The check
   passes the loaded adapters to the command, so the command calls the active
   base's adapter with no flag and no lookup of its own.
