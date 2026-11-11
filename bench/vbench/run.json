@@ -1,0 +1,14 @@
+{
+  "mode": "bakeoff",
+  "engines": ["chat"],
+  "throttles": [1, 4],
+  "groups": [
+    ["S12", "S12-page", "S12-viewport-page"],
+    ["S6", "S6-item", "S6-page", "S6-item-page"],
+    ["S4-page", "A4", "A4-page"],
+    ["S8-S1-page", "S8-S3-page", "S8-S5-page"],
+    ["S3"]
+  ],
+  "runs": 3,
+  "text": 100
+}

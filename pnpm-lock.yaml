@@ -382,6 +382,9 @@ importers:
       '@stylexjs/unplugin':
         specifier: ^0.19.0
         version: 0.19.1(unplugin@3.7.0(esbuild@0.28.2)(rolldown@1.2.16)(rollup@4.62.2)(vite@8.3.5(@types/node@25.9.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))
+      '@tanstack/virtual-core':
+        specifier: 3.19.10
+        version: 3.19.10
       '@types/node':
         specifier: ^25.9.3
         version: 25.9.4
@@ -3710,6 +3713,9 @@ packages:
 
   '@tailwindcss/postcss@4.3.2':
     resolution: {integrity: sha512-rjVWYCa7Ngbi5AarT6k8TkxUG3Wl1QKzHdIZVsjZSzf36Jmo2IKZt/NHRAwly8oDkbBOH0YTu+CHuf9jPxMc+g==}
+
+  '@tanstack/virtual-core@3.19.10':
+    resolution: {integrity: sha512-/ltpH0qUCs5XQYE7fIhgA+aqgC5NzSfLTDQkC+N1wOOdvIYx1FH/kz2LGfSeanNbekqy3WBu6mNIbqXhxE/pew==}
 
   '@testing-library/dom@10.4.2':
     resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
@@ -9652,6 +9658,8 @@ snapshots:
       '@tailwindcss/oxide': 4.3.2
       postcss: 8.5.25
       tailwindcss: 4.3.2
+
+  '@tanstack/virtual-core@3.19.10': {}
 
   '@testing-library/dom@10.4.2':
     dependencies:
