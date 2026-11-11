@@ -437,11 +437,13 @@ const DECLARED = {
   'theme build': ['themes.compile'],
   'theme add': ['themes.appModule'],
   'theme use': ['themes.appModule'],
+  'theme remove': ['themes.appModule'],
   'experimental render': ['render.page'],
   'experimental render --reverse': ['render.reverse'],
   'experimental theme compile': ['themes.compile'],
   'experimental theme add': ['themes.appModule'],
   'experimental theme use': ['themes.appModule'],
+  'experimental theme remove': ['themes.appModule'],
   'experimental theme template': ['themes.template'],
   'experimental theme targets': ['themes.targets'],
   'experimental theme editor new': ['themes.targets', 'themes.compile'],
@@ -494,7 +496,7 @@ describe('a project whose only base is not Core', () => {
       expect(theme.stdout).not.toMatch(/^ {2}build /m);
       expect(theme.stdout).not.toContain('theme targets');
       expect(theme.stdout.trimEnd().split('\n').at(-1)).toBe(
-        '5 commands hidden: the active base @acme/native-ui does not provide the steps they need.',
+        '6 commands hidden: the active base @acme/native-ui does not provide the steps they need.',
       );
       const template = astryx(['template', '--help'], dir);
       expect(template.stdout).not.toMatch(/^ +--skeleton/m);
@@ -758,7 +760,6 @@ describe('JSON help, suggestions, and codemods on a non-Core base', () => {
       expect(theme.json().data.subcommands.map(s => s.name)).toEqual([
         'palette',
         'list',
-        'remove',
         'eject',
       ]);
       const template = astryx(['template', '--help', '--json'], dir);
@@ -769,7 +770,6 @@ describe('JSON help, suggestions, and codemods on a non-Core base', () => {
       expect(typo.json().suggestions.map(s => s.name)).toEqual([
         'palette',
         'list',
-        'remove',
         'eject',
       ]);
       const help = astryx(['--json', 'help'], dir);
