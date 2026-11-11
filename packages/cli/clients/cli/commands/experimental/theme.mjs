@@ -66,6 +66,7 @@ import {doc as previewAppFn} from '../../../../api/theme-edit/themeEditPreviewAp
 import {doc as previewListFn} from '../../../../api/theme-edit/themeEditPreviewList.doc.mjs';
 import {doc as previewRemoveFn} from '../../../../api/theme-edit/themeEditPreviewRemove.doc.mjs';
 import {doc as howFn} from '../../../../api/theme-edit/themeEditHow.doc.mjs';
+import {commandAvailable, helpBase} from '../../lib/base-gate.mjs';
 
 const PREFIX = 'astryx experimental theme';
 const EDITOR = `${PREFIX} editor`;
@@ -346,7 +347,9 @@ function defineGroup(parent, doc) {
         return cliError(
           `unknown subcommand '${doc.name} ${String(extras[0])}'`,
           {
-            suggestions: (cmd.commands ?? []).map(command => ({
+            suggestions: (cmd.commands ?? [])
+              .filter(command => commandAvailable(command, helpBase()))
+              .map(command => ({
               name: command.name(),
               reason: 'available subcommand',
             })),

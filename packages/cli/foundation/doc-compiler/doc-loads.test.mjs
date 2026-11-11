@@ -321,6 +321,10 @@ const RUNNERS = {
     runs: 'the generated record default theme, or the released package.json astryx.theme value when no record exists',
     sites: ['require(<computed>)'],
   },
+  'foundation/bases/requirements.mjs': {
+    runs: "a base's adapter module, only in a run whose command needs one of its steps",
+    sites: ['import(<computed>)'],
+  },
   'foundation/config/project.mjs': {
     runs: 'astryx.config, through the config parser',
     sites: ['loadModuleWithParser(..., parseConfig)'],

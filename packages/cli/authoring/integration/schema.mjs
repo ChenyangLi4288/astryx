@@ -99,6 +99,9 @@ export const integrationBaseSchema = z.object({
   experimental: z.object({iconSets: z.string().optional()}).optional(),
   issuesUrl: z.string().url().optional(),
   docsiteUrl: z.string().url().optional(),
+  base: z
+    .object({adapters: z.record(z.string(), z.string()).optional()})
+    .optional(),
 });
 
 // Unknown top-level keys are stripped rather than rejected. `.strict()` made a key from a

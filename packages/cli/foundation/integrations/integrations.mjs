@@ -58,6 +58,8 @@ import {resolveProviders} from './provider-resolution.mjs';
  * @property {string} [themes]
  * @property {string} [iconSets] the manifest's `experimental.iconSets` root
  * @property {string} [issuesUrl]
+ * @property {import('../../authoring/integration/type').BaseDeclaration} [base]
+ *   present when the package is a base
  * @property {{append?: readonly string[]}} [agentDocs]
  * @property {string} [cliCommand] the command this package's users run the
  *   CLI with; read by the picker in foundation/env (see cli-command.mjs)
@@ -503,6 +505,7 @@ export async function loadLocalIntegration(packageDir, {fresh = false} = {}) {
     issuesUrl: manifest.issuesUrl,
     agentDocs: manifest.agentDocs,
     cliCommand: manifest.cliCommand,
+    base: manifest.base,
     __cliCommandError: cliCommandError,
     __agentDocsError: agentDocsError,
     __unknownKeys: unknownKeys,
@@ -631,6 +634,7 @@ export async function loadIntegrations(
       issuesUrl: manifest.issuesUrl,
       agentDocs: manifest.agentDocs,
       cliCommand: manifest.cliCommand,
+      base: manifest.base,
       __cliCommandError: cliCommandError,
       __agentDocsError: agentDocsError,
       __unknownKeys: unknownKeys,

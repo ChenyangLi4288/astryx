@@ -45,6 +45,7 @@ export const doc = {
     },
   ],
   outsideProject: 'refuse',
+  requires: ['themes.targets', 'themes.compile'],
   notes: [
     {
       type: 'prose',

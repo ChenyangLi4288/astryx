@@ -62,6 +62,7 @@ export const doc = {
     },
   ],
   outsideProject: 'refuse',
+  requires: ['themes.appModule'],
   notes: [
     {
       type: 'prose',

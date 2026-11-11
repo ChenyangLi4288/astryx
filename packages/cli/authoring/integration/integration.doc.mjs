@@ -106,6 +106,13 @@ export const doc = {
         'The command your users run the Astryx CLI with, when it is not their package manager, such as a wrapper your company ships. Every command the CLI prints in an app that loads your package starts with it, in place of `pnpm exec astryx` or `yarn astryx`: hints, errors, Doctor fixes, and doc text. One line, without a subcommand. If two loaded packages set different commands, neither is used and `{@command doctor}` warns. An invalid value is ignored with an `invalid_cli_command` warning, and the rest of the manifest still loads. JSON output keeps commands bare.',
       example: "'acme astryx'",
     },
+    {
+      name: 'base',
+      type: '{adapters?: Record<string, string>}',
+      description:
+        "Makes your package a base: a component library that stands in for Core in the apps that use it. `adapters` maps a capability, as `BaseCapability` lists them, to the module, relative to the package, that performs its platform steps; the functions the module exports are the steps your base serves. `base: {}` serves content only. A run reads one base: `--base`; else, in an integration package, the base it is or builds on; else the app's Core; else its one installed base; else Core. Help hides a command whose step the base does not serve, and running it fails with `ERR_BASE_CAPABILITY`. An integration builds on each base it lists in `peerDependencies`, or on Core when it lists none, and contributes only to runs on a base it builds on.",
+      example: "{adapters: {themes: './astryx/themes.mjs'}}",
+    },
   ],
   examples: [
     {

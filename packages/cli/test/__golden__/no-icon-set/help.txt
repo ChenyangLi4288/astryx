@@ -8,6 +8,7 @@ Options:
   --dense                           <text>
   --lang <locale>                   <text>
   --detail <level>                  <text>
+  --base <package>                  <text>
   --json                            <text>
   -h, --help                        <text>
 

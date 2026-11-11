@@ -94,6 +94,11 @@ export async function runCli({cliRoot, argv, declinedProjectCli}) {
   // Pick up the project's `debug` function before parsing, so parse errors
   // and `--help` — which short-circuit before any hook runs — are reported
   // too.
+  const {requestedBaseFromArgv, setRequestedBase} = await import(
+    '../../foundation/bases/resolve.mjs'
+  );
+  setRequestedBase(requestedBaseFromArgv(process.argv.slice(2)));
+
   await loadProjectDebugHandler();
   // Help prints its commands while Commander parses, so a help run reads the
   // project's declared `cliCommand` here.

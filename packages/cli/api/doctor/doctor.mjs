@@ -118,6 +118,7 @@ import {
   builtIntegrationPackages,
 } from './_adapter.mjs';
 import {checkBuilt} from './built-checks.mjs';
+import {currentNonCoreBase} from '../../foundation/bases/state.mjs';
 
 /**
  * @typedef {'pass'|'warn'|'fail'|'info'} DoctorStatus
@@ -1562,16 +1563,20 @@ export async function checkDocsTree(_ctx, options = {}) {
       }
       // Every link between docs names a doc that exists (spec:AST-047 FR9):
       // typed fields, reference and workflow blocks, and inline links. A
-      // reference block also includes all it names.
-      for (const node of tree.nodes.values()) {
-        for (const edge of typedEdges(tree, node).unresolved) {
-          problems.push(`${node.route}: ${edge}`);
+      // reference block also includes all it names. A run whose base is not
+      // Core leaves Core's docs out, so the CLI's links into them are checked
+      // only in a run on Core.
+      if (!currentNonCoreBase()) {
+        for (const node of tree.nodes.values()) {
+          for (const edge of typedEdges(tree, node).unresolved) {
+            problems.push(`${node.route}: ${edge}`);
+          }
         }
+        problems.push(...(await docsLinkProblems(catalog, tree)));
+        problems.push(
+          ...(await docsLinkProblems(catalog, tree, {references: true})),
+        );
       }
-      problems.push(...(await docsLinkProblems(catalog, tree)));
-      problems.push(
-        ...(await docsLinkProblems(catalog, tree, {references: true})),
-      );
     }
     // New findings warn: a project that passed before keeps passing
     // (0.6 compatibility), and the warning names what to fix.

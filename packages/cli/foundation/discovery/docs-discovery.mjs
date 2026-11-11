@@ -42,6 +42,7 @@ import {
   sourceTitle,
   withSourceTitle,
 } from './docs-section-key.mjs';
+import {currentNonCoreBase} from '../bases/state.mjs';
 
 export {withSourceTitle};
 
@@ -135,6 +136,8 @@ export function isGuideRoute(target) {
 export function discoverBuiltinTopics() {
   /** @type {Record<string, string>} */
   const topics = Object.create(null);
+  // These topics describe Core; they show only in a run whose base is Core.
+  if (currentNonCoreBase()) return topics;
   if (!fs.existsSync(BUILTIN_DOCS_DIR)) return topics;
   for (const file of listDir(BUILTIN_DOCS_DIR)) {
     const match = file.match(BUILTIN_TOPIC_FILE_RE);

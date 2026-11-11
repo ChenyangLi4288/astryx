@@ -46,6 +46,7 @@ export const doc = {
     },
   ],
   outsideProject: 'own',
+  requires: ['setup.guide', 'themes.appModule'],
   notes: [
     {
       type: 'prose',
