@@ -630,6 +630,19 @@ describe('a project whose only base is not Core', () => {
   it(
     'fails help when the base does not resolve',
     () => {
+      const native = project({'@acme/native-ui': CONTENT_BASE});
+      const valued = astryx(['--detail', 'compact', 'help', 'theme'], native);
+      expect(valued.status).toBe(0);
+      expect(valued.stdout).not.toMatch(/^ {2}build /m);
+      expect(valued.stdout.trimEnd().split('\n').at(-1)).toMatch(/commands hidden/);
+      const valuedMissing = astryx(
+        ['--json', '--detail', 'compact', '--base', '@acme/nope', 'help'],
+        native,
+      );
+      expect(valuedMissing.status).toBe(1);
+      expect(valuedMissing.json().code).toBe('ERR_BASE_NOT_FOUND');
+      const swizzle = astryx(['swizzle', '--list'], native);
+      expect(swizzle.stdout).not.toContain('swizzle Button');
       const dir = project({'@acme/native-ui': CONTENT_BASE});
       const missing = astryx(['--json', '--base', '@acme/nope', 'help'], dir);
       expect(missing.status).toBe(1);

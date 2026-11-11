@@ -3,7 +3,7 @@
 /**
  * @file The closed, append-only list of platform steps a base can serve.
  * @input nothing
- * @output BASE_STEPS
+ * @output BASE_STEPS and BASE_CAPABILITIES
  * @position authoring/integration — shared by the command-doc schema and the
  *   CLI's requirement check
  */
@@ -27,3 +27,13 @@ export const BASE_STEPS = Object.freeze([
   'icons.appModule',
   'setup.guide',
 ]);
+
+/**
+ * The capabilities a base declares one adapter for, in list order.
+ * @type {readonly import('./type').BaseCapability[]}
+ */
+export const BASE_CAPABILITIES = Object.freeze(
+  /** @type {import('./type').BaseCapability[]} */ ([
+    ...new Set(BASE_STEPS.map(step => step.slice(0, step.indexOf('.')))),
+  ]),
+);

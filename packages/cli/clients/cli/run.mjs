@@ -103,8 +103,8 @@ export async function runCli({cliRoot, argv, declinedProjectCli}) {
   await loadProjectDebugHandler();
   // Help prints its commands while Commander parses, so a help run reads the
   // project's declared `cliCommand` here.
-  await loadProjectForHelp();
-  await refuseHelpWithoutBase();
+  await loadProjectForHelp(process.argv.slice(2), program);
+  await refuseHelpWithoutBase(process.argv.slice(2), program);
 
   // `--version --json` answers and exits without Commander, so it runs here —
   // after the handler exists, or the run would go unrecorded.

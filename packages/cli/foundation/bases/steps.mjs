@@ -8,18 +8,11 @@
  *   declarations, the requirement check, and help share
  */
 
-export {BASE_STEPS} from '../../authoring/integration/base-steps.mjs';
+export {
+  BASE_CAPABILITIES,
+  BASE_STEPS,
+} from '../../authoring/integration/base-steps.mjs';
 import {BASE_STEPS} from '../../authoring/integration/base-steps.mjs';
-
-/**
- * The capabilities a base declares one adapter for, in list order.
- * @type {readonly import('../../authoring/integration/type').BaseCapability[]}
- */
-export const BASE_CAPABILITIES = Object.freeze(
-  /** @type {import('../../authoring/integration/type').BaseCapability[]} */ ([
-    ...new Set(BASE_STEPS.map(step => step.split('.')[0])),
-  ]),
-);
 
 /**
  * @param {string} value

@@ -251,17 +251,28 @@ async function loadProjectOnce() {
 }
 
 /**
- * The first word of a run that is not an option or the value of `--base`.
+ * The first word of a run that is not an option or an option's value. The
+ * root's own options say which take a value; without the program, only
+ * `--base` is known to.
  * @param {string[]} argv
+ * @param {import('commander').Command} [program] the root, with its options
  * @returns {string | undefined}
  */
-function firstOperand(argv) {
+function firstOperand(argv, program) {
   for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === '--base') {
+    const arg = argv[i];
+    if (arg === '--') return argv[i + 1];
+    if (arg.length < 2 || !arg.startsWith('-')) return arg;
+    if (arg.includes('=')) continue;
+    const option = program
+      ? program.options.find(o => o.long === arg || o.short === arg)
+      : arg === '--base'
+        ? {required: true, optional: false}
+        : undefined;
+    if (option?.required) i += 1;
+    else if (option?.optional && argv[i + 1] != null && !argv[i + 1].startsWith('-')) {
       i += 1;
-      continue;
     }
-    if (!argv[i].startsWith('-')) return argv[i];
   }
   return undefined;
 }
@@ -275,11 +286,13 @@ function firstOperand(argv) {
  * outside a package. Called from the bin before Commander parses.
  *
  * @param {string[]} [argv] arguments after the binary.
+ * @param {import('commander').Command} [program] the root, which says
+ *   which of its options take a value
  * @returns {Promise<void>}
  */
-export async function loadProjectForHelp(argv = process.argv.slice(2)) {
+export async function loadProjectForHelp(argv = process.argv.slice(2), program) {
   const help =
-    argv.includes('--help') || argv.includes('-h') || firstOperand(argv) === 'help';
+    argv.includes('--help') || argv.includes('-h') || firstOperand(argv, program) === 'help';
   if (!help) return;
   try {
     const cwd = process.cwd();
@@ -296,11 +309,13 @@ export async function loadProjectForHelp(argv = process.argv.slice(2)) {
  * help lists what the run's base serves, so with no base it has nothing true
  * to list. Called from the bin after the help preload.
  * @param {string[]} [argv] arguments after the binary.
+ * @param {import('commander').Command} [program] the root, which says
+ *   which of its options take a value
  * @returns {Promise<void>}
  */
-export async function refuseHelpWithoutBase(argv = process.argv.slice(2)) {
+export async function refuseHelpWithoutBase(argv = process.argv.slice(2), program) {
   const help =
-    argv.includes('--help') || argv.includes('-h') || firstOperand(argv) === 'help';
+    argv.includes('--help') || argv.includes('-h') || firstOperand(argv, program) === 'help';
   if (!help) return;
   const {runBase} = await import('../../foundation/bases/resolve.mjs');
   const resolution = runBase();
