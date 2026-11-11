@@ -61,7 +61,28 @@ const styles = stylex.create({
   scroller: {
     position: 'relative',
   },
+  // A fixed box the viewport's size: its ResizeObserver entry reports a
+  // viewport change that leaves the page scroller's own box unchanged.
+  viewportProbe: {
+    position: 'fixed',
+    inset: 0,
+    visibility: 'hidden',
+    pointerEvents: 'none',
+    zIndex: -1,
+  },
 });
+
+/** Adds the hidden viewport-sized box the page scroller observes. */
+const addViewportProbe = (doc: Document): HTMLElement => {
+  const probe = doc.createElement('div');
+  probe.setAttribute('aria-hidden', 'true');
+  const {className} = stylex.props(styles.viewportProbe);
+  if (className !== undefined) {
+    probe.className = className;
+  }
+  doc.body.appendChild(probe);
+  return probe;
+};
 
 // While a finger scroll ends in an elastic overscroll, a write would snap the
 // bounce onto the clamp; the flush waits a frame at a time until it is over.
@@ -1039,9 +1060,6 @@ export function ChatVirtualizer<T>(
   // Sizes come through Core's shared resize observer, one callback per entry;
   // the sync they trigger runs once per batch, after the last entry.
   const syncQueued = React.useRef(false);
-  // Set when the scroller's own ResizeObserver entry arrives, so a window
-  // resize that also resizes the scroller's box runs no second pass.
-  const containerEntrySeen = React.useRef(false);
   const onResizeRef = React.useRef<
     ((entry: ResizeObserverEntry) => void) | null
   >(null);
@@ -1073,7 +1091,6 @@ export function ChatVirtualizer<T>(
         // the geometry dirty here, a window resize or a growing composer
         // would leave the pinned bottom stranded.
         geoChanged.current = true;
-        containerEntrySeen.current = true;
         return;
       }
       // Border box, the same box the sync path reads with offsetHeight —
@@ -1349,47 +1366,16 @@ export function ChatVirtualizer<T>(
     scrollTarget.addEventListener('scroll', scrollHandler, {passive: true});
     el.addEventListener('wheel', onWheel, {passive: true});
     // The page's own scroller's box does not change size with the viewport,
-    // so a window resize reaches it as a resize event instead.
-    // An iOS toolbar height change gives the page scroller no ResizeObserver
-    // entry and fires many resize events in one frame. So the handler reads no
-    // layout: it marks the geometry dirty and runs one correction pass per frame.
-    const view = isPageScroller(el) ? el.ownerDocument.defaultView : null;
-    let viewportFrame: number | null = null;
-    let lastWidth = view?.innerWidth ?? 0;
-    let isWidthChanged = false;
-    const onViewportResize = (): void => {
-      geoChanged.current = true;
-      if (view === null) {
-        return;
-      }
-      const width = view.innerWidth;
-      if (width !== lastWidth) {
-        lastWidth = width;
-        isWidthChanged = true;
-      }
-      if (viewportFrame !== null) {
-        return;
-      }
-      containerEntrySeen.current = false;
-      viewportFrame = view.requestAnimationFrame(() => {
-        if (!isWidthChanged) {
-          viewportFrame = null;
-          syncRef.current();
-          return;
-        }
-        // A width change resizes the page scroller's box, so its
-        // ResizeObserver entry runs this frame's pass. One frame later, a pass
-        // runs only if that entry did not arrive.
-        viewportFrame = view.requestAnimationFrame(() => {
-          viewportFrame = null;
-          isWidthChanged = false;
-          if (!containerEntrySeen.current) {
-            syncRef.current();
-          }
-        });
-      });
-    };
-    view?.addEventListener('resize', onViewportResize, {passive: true});
+    // and an iOS toolbar change resizes only the viewport. The viewport probe
+    // reports both in the same ResizeObserver batch as the scroller and its
+    // rows, so one viewport change runs one correction pass and reads no
+    // layout outside it.
+    const viewportProbe = isPageScroller(el)
+      ? addViewportProbe(el.ownerDocument)
+      : null;
+    if (viewportProbe !== null) {
+      observeSize(viewportProbe);
+    }
     // Observe the CONTAINER too (rows alone miss clientHeight changes): a
     // window resize or a growing composer moves the end-mode target and the
     // window coverage without any row changing size. Container entries have
@@ -1399,10 +1385,9 @@ export function ChatVirtualizer<T>(
       setScrollAnchoringOff(el, false);
       scrollTarget.removeEventListener('scroll', scrollHandler);
       el.removeEventListener('wheel', onWheel);
-      view?.removeEventListener('resize', onViewportResize);
-      if (viewportFrame !== null) {
-        view?.cancelAnimationFrame(viewportFrame);
-        viewportFrame = null;
+      if (viewportProbe !== null) {
+        unobserveSize(viewportProbe);
+        viewportProbe.remove();
       }
       // A replaced or unmounted scroller ends the gesture with it: the
       // finger-scroll watch moves to the new element and reports no end for
