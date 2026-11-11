@@ -147,7 +147,8 @@ export function baseOf(integration) {
 
 /**
  * The bases an integration builds on: each base its package.json lists in
- * `peerDependencies`, or Core when it lists none.
+ * `peerDependencies`; with none, a base builds on no base and any other
+ * integration builds on Core.
  * @param {LoadedIntegration} integration
  * @param {ReadonlySet<string>} baseNames every base the run knows, Core
  *   included
@@ -169,7 +170,10 @@ export function buildsOn(integration, baseNames) {
   const on = Object.keys(peers).filter(
     name => baseNames.has(name) && name !== integration.name,
   );
-  return on.length > 0 ? on : [CORE_BASE_NAME];
+  if (on.length > 0) return on;
+  // A base that lists no other base builds on none: it contributes only to a
+  // run on itself.
+  return isBaseIntegration(integration) ? [] : [CORE_BASE_NAME];
 }
 
 /**

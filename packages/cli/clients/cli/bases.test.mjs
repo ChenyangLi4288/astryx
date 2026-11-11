@@ -316,12 +316,12 @@ describe('integrations build on the bases they list as peers', () => {
     ]);
     const core = splitForBase(integrations, coreBase());
     expect(core.kept.map(i => i.name)).toEqual([
-      '@acme/native-ui',
       '@acme/web-charts',
       '@acme/plain',
       '@acme/both',
     ]);
     expect(core.leftOut.map(l => [l.integration.name, l.buildsOn])).toEqual([
+      ['@acme/native-ui', []],
       ['@acme/native-charts', ['@acme/native-ui']],
     ]);
   });
@@ -710,7 +710,14 @@ describe('a project whose only base is not Core', () => {
       expect(topic.json().code).toBe('ERR_UNKNOWN_TOPIC');
       const component = astryx(['--json', 'component', 'Button'], dir);
       expect(component.status).toBe(1);
-      expect(component.json().code).toBe('ERR_CORE_NOT_FOUND');
+      expect(component.json().code).toBe('ERR_UNKNOWN_COMPONENT');
+      const list = astryx(['--json', 'component', '--list'], dir);
+      expect(list.status).toBe(0);
+      expect(list.json().data.components).toEqual({});
+      const hooks = astryx(['--json', 'hook', '--list'], dir);
+      expect(hooks.status).toBe(0);
+      const swizzle = astryx(['--json', 'swizzle', 'Button'], dir);
+      expect(swizzle.json().code).toBe('ERR_UNKNOWN_COMPONENT');
       const search = astryx(['--json', 'search', 'button'], dir);
       expect(search.status).toBe(0);
       const found = search.json().data.results;
@@ -736,7 +743,7 @@ describe('a project whose only base is not Core', () => {
         dir,
       );
       expect(native.status).toBe(1);
-      expect(native.json().code).toBe('ERR_CORE_NOT_FOUND');
+      expect(native.json().code).toBe('ERR_UNKNOWN_COMPONENT');
     },
     SLOW,
   );

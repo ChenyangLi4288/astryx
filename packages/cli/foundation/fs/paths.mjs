@@ -31,6 +31,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Root of the @astryxdesign/cli package */
 export const CLI_ROOT = path.resolve(__dirname, '..', '..');
 
+/**
+ * A folder with no Core content: an empty `src` and no package.json. A run whose
+ * base is not Core reads it wherever a command reads Core's folder layout.
+ */
+export const NO_CORE_CONTENT_DIR = path.resolve(__dirname, '..', 'bases', 'no-core');
+
 /** The package every Core lookup answers for. */
 const CORE_PACKAGE = '@astryxdesign/core';
 
@@ -106,13 +112,10 @@ export function unavailableCoreMessage(found, inProject) {
  * @returns {string}
  */
 export function requireCoreDir(startDir = process.cwd()) {
-  const base = currentNonCoreBase();
-  if (base) {
-    throw codedError(
-      `This command reads Core, and the active base ${base.name} is not Core.`,
-      ERROR_CODES.ERR_CORE_NOT_FOUND,
-    );
-  }
+  // A run whose base is not Core reads a folder with no Core content in
+  // Core's place, so a command finds no Core item and answers from the
+  // base's integrations alone.
+  if (currentNonCoreBase()) return NO_CORE_CONTENT_DIR;
   const found = findProjectCoreDir(startDir) ?? carriedCoreFor(startDir, true);
   if (typeof found === 'string') return noteCore(found, 'project');
   if (found.unavailable) {

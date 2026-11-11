@@ -74,16 +74,11 @@ exports, named `<capability>.<step>`, from the closed list in FR4.
   (`spec:AST-039`), and a base that ships none of a kind gives an empty
   answer, not a refusal.
 
-  FR1 gap: in a run whose active base is not Core, the CLI reads none of
-  Core's content but does not yet read the base's in its place.
-  `component`, `hook`, `swizzle`, and `build` fail with `ERR_CORE_NOT_FOUND`
-  instead of reading the base's roots; `upgrade` lists and runs only the
-  codemods of the integrations that build on the base; `template`, `theme list`, and `docs`
-  answer from the integrations that build on the base and the docs that
-  describe the CLI (`authoring`, `cli`, `global`); `search` answers from
-  those and names the domains it skipped; `doctor` reports Core and Core's
-  themes as missing. The integration manifest has no hooks root, so a base
-  cannot ship hook descriptors.
+  FR1 gap: in a run whose active base is not Core, `build` still names
+  Core's layout components in its frame, the `hook --list` and
+  `swizzle --list` envelopes name `@astryxdesign/core` as their package, and
+  `doctor` reports Core and Core's themes as missing. The integration
+  manifest has no hooks root, so a base cannot ship hook descriptors.
 
   FR1 gap: a copied template treats React, React DOM, StyleX, and the
   `@astryxdesign/` packages as installed and gets a DOM icon placeholder, and
@@ -280,7 +275,8 @@ help`, `astryx --help`, and a group's help MUST list only the commands,
 
 - **FR9 — An integration builds on the bases it lists as peers.** An
   integration builds on each base its `package.json` lists in
-  `peerDependencies`; one that lists no base builds on Core. An integration
+  `peerDependencies`; one that lists no base builds on Core, unless it is
+  itself a base, which then builds on no base. An integration
   contributes to a run only when it builds on that run's active base, or is
   itself that base. One that does not is left out of the run, and `discover`
   and `doctor` list it with the bases it builds on. Integration authoring
