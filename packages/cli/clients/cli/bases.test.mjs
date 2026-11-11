@@ -498,6 +498,10 @@ describe('a project whose only base is not Core', () => {
       expect(theme.stdout.trimEnd().split('\n').at(-1)).toBe(
         '6 commands hidden: the active base @acme/native-ui does not provide the steps they need.',
       );
+      const experimental = astryx(['experimental', 'theme', '--help'], dir);
+      expect(experimental.stdout).not.toContain('experimental theme targets');
+      expect(experimental.stdout).not.toContain('experimental theme editor how');
+      expect(experimental.stdout).toContain('component <Name>');
       const template = astryx(['template', '--help'], dir);
       expect(template.stdout).not.toMatch(/^ +--skeleton/m);
       expect(template.stdout).not.toMatch(/^ +--cdn/m);

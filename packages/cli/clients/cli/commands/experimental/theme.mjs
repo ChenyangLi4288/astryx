@@ -66,7 +66,11 @@ import {doc as previewAppFn} from '../../../../api/theme-edit/themeEditPreviewAp
 import {doc as previewListFn} from '../../../../api/theme-edit/themeEditPreviewList.doc.mjs';
 import {doc as previewRemoveFn} from '../../../../api/theme-edit/themeEditPreviewRemove.doc.mjs';
 import {doc as howFn} from '../../../../api/theme-edit/themeEditHow.doc.mjs';
-import {commandAvailable, helpBase} from '../../lib/base-gate.mjs';
+import {
+  commandAvailable,
+  exampleAvailable,
+  helpBase,
+} from '../../lib/base-gate.mjs';
 
 const PREFIX = 'astryx experimental theme';
 const EDITOR = `${PREFIX} editor`;
@@ -372,12 +376,20 @@ function defineGroup(parent, doc) {
 export function registerExperimentalTheme(group, program) {
   const theme = defineGroup(group, groupDoc);
   explained(theme, groupDoc);
+  // The run's base may not serve a line's command; help then leaves it out.
+  const overrides = [
+    ['experimental theme targets', `  ${getCliInvocation()} experimental theme targets          Every themeable class, with its props and states\n`],
+    ['experimental theme editor how', `  ${getCliInvocation()} experimental theme editor how <part>  What one part reads, and the commands that change it\n`],
+    ['component <Name>', `  ${getCliInvocation()} component <Name>                    One component's theming table\n`],
+  ];
   theme.addHelpText(
     'after',
-    `\nComponent style overrides:\n` +
-      `  ${getCliInvocation()} experimental theme targets          Every themeable class, with its props and states\n` +
-      `  ${getCliInvocation()} experimental theme editor how <part>  What one part reads, and the commands that change it\n` +
-      `  ${getCliInvocation()} component <Name>                    One component's theming table\n`,
+    () =>
+      `\nComponent style overrides:\n` +
+      overrides
+        .filter(([cli]) => exampleAvailable(program, cli, helpBase()))
+        .map(([, line]) => line)
+        .join(''),
   );
 
   const editor = defineGroup(theme, editorDoc);
