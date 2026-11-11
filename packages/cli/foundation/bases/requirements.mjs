@@ -15,9 +15,8 @@ import {pathToFileURL} from 'node:url';
 import {capabilityOf, exportOf} from './steps.mjs';
 
 /**
- * The steps a base serves, as help and the manifest read them: every step
- * of each declared capability. Help never loads an adapter, so a declared
- * adapter that lacks a step shows the command and the run refuses it.
+ * The steps in `steps` that a base does not serve, as help and the manifest
+ * read them. Help never loads an adapter.
  * @param {import('./resolve.mjs').ActiveBase} base
  * @param {readonly string[] | undefined} steps
  * @returns {string[]} the steps it does not serve

@@ -650,6 +650,33 @@ describe('a project whose only base is not Core', () => {
   );
 
   it(
+    "warns about a base doc's broken link to its own package",
+    () => {
+      const dir = project({
+        '@acme/native-ui': {
+          manifest: "export default {base: {}, docs: './docs'};\n",
+          files: {
+            'docs/native-guide.doc.mjs': `export default {
+  type: 'generic',
+  name: 'native-guide',
+  title: 'Native guide',
+  category: 'guide',
+  description: 'How to use the native library.',
+  sections: [{id: 'intro', title: 'Intro', content: [{type: 'prose', text: 'See {@link @acme/native-ui:generic:tokens}.'}]}],
+};
+`,
+          },
+        },
+      });
+      const r = astryx(['--json', 'doctor'], dir);
+      const tree = r.json().data.checks.find(c => c.id === 'docs-tree');
+      expect(tree.status).toBe('warn');
+      expect(tree.message).toContain('@acme/native-ui:generic:tokens');
+    },
+    SLOW,
+  );
+
+  it(
     'lists every command in the manifest with requires and available',
     () => {
       const dir = project({'@acme/native-ui': CONTENT_BASE});

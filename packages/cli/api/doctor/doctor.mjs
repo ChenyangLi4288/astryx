@@ -1524,17 +1524,22 @@ export async function checkCliDocs(_ctx, options = {}) {
   }
 }
 
+/** The providers whose docs a run on another base leaves out. */
+const CORE_DOC_PROVIDERS = new Set(['@astryxdesign/core', '@astryxdesign/cli']);
+
 /**
  * Does a link problem name a doc in `names` as its missing target, written
- * `"[<provider>:]<kind>:<name>"`?
+ * `"[<provider>:]<kind>:<name>"`, with no provider or a Core one?
  * @param {string} problem
  * @param {Set<string>} names
  * @returns {boolean}
  */
 function namesCoreDoc(problem, names) {
   if (names.size === 0) return false;
-  for (const match of problem.matchAll(/"(?:[^":\s]+:)?[a-z-]+:([\w-]+)"/gu)) {
-    if (names.has(match[1])) return true;
+  for (const match of problem.matchAll(/"(?:([^":\s]+):)?[a-z-]+:([\w-]+)"/gu)) {
+    const [, provider, name] = match;
+    if (provider != null && !CORE_DOC_PROVIDERS.has(provider)) continue;
+    if (names.has(name)) return true;
   }
   return false;
 }
